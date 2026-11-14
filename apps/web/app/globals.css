@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+
+  --color-ink: #18181b;
+  --color-ground: #fafaf9;
+  --color-brand-50: #eef3fe;
+  --color-brand-100: #dbeafe;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+}
+
+@layer base {
+  html {
+    color: var(--color-ink);
+    background: var(--color-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@utility btn {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-[10px] px-4 text-[15px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-brand-600 text-white hover:bg-brand-700;
+}
+@utility btn-secondary {
+  @apply btn border border-zinc-300 bg-white text-ink hover:bg-zinc-50;
+}
+@utility btn-ghost {
+  @apply btn text-zinc-700 hover:bg-zinc-100;
+}
+@utility btn-danger {
+  @apply btn border border-red-200 bg-white text-red-700 hover:bg-red-50;
+}
+@utility field {
+  @apply h-11 w-full rounded-[10px] border border-zinc-300 bg-white px-3 text-[15px] text-ink placeholder:text-zinc-500;
+}
+@utility card {
+  @apply rounded-[14px] border border-zinc-200 bg-white;
+}
+@utility pill {
+  @apply inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold;
+}

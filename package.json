@@ -1,0 +1,14 @@
+{
+  "name": "pdfinkly",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "dev": "pnpm --filter @pdfinkly/web dev",
+    "build": "pnpm --filter @pdfinkly/web build",
+    "start": "pnpm --filter @pdfinkly/web start",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "db:migrate": "pnpm --filter @pdfinkly/db migrate"
+  }
+}
