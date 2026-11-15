@@ -2,14 +2,31 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFPageProxy } from "pdfjs-dist";
-import type { OcrLine } from "@pdfinkly/shared";
+import { OCR_FONT_NAME } from "@pdfinkly/shared";
 import { IconX } from "../icons";
-import { looksScanned, OCR_LANGS, recognisePages, type OcrLang, type OcrProgress } from "@/lib/client/ocr";
+import { looksScanned, OCR_LANGS, recognisePages, type OcrLang, type OcrPageInput, type OcrProgress, type OcrResult } from "@/lib/client/ocr";
+import { textBlocks } from "./textBlocks";
 
 export interface OcrPageRef {
   ref: string;
   label: string;
+  /** Rotation added in the editor (unsaved), on top of the page's own. */
+  rotation: number;
   load: () => Promise<PDFPageProxy | null>;
+}
+
+/** scan: no text layer; ocr: only text from an earlier OCR run; text: real text. */
+type PageKind = "scan" | "ocr" | "text";
+
+async function pageKind(page: PDFPageProxy): Promise<PageKind> {
+  if (await looksScanned(page).catch(() => false)) return "scan";
+  // Mostly recognised text (a few edited paragraphs may be real text now).
+  let ocr = 0, other = 0;
+  for (const b of await textBlocks(page)) {
+    if (b.font.raw === OCR_FONT_NAME) ocr += b.text.length;
+    else other += b.text.length;
+  }
+  return ocr > other ? "ocr" : "text";
 }
 
 const LANG_KEY = "pdfinkly.ocrLangs";
@@ -32,9 +49,10 @@ export function OcrDialog({
   pages: OcrPageRef[];
   unsaved: number;
   onClose: () => void;
-  onRecognised: (result: Record<string, OcrLine[]>, stats: { pages: number; words: number }) => void;
+  onRecognised: (result: OcrResult, stats: { pages: number; words: number }) => void;
 }) {
-  const [scanned, setScanned] = useState<string[] | null>(null);
+  const [kinds, setKinds] = useState<Record<string, PageKind> | null>(null);
+  const [upright, setUpright] = useState(true);
   const [scope, setScope] = useState<"scanned" | "all">("scanned");
   const [langs, setLangs] = useState<OcrLang[]>(["eng"]);
   const [progress, setProgress] = useState<OcrProgress | null>(null);
@@ -45,19 +63,19 @@ export function OcrDialog({
   useEffect(() => setLangs(loadLangs()), []);
   useEffect(() => dialog.current?.focus(), []);
 
-  // Find pages without text (likely scans).
+  // Find scanned pages (no text, or only text from an earlier OCR run).
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const found: string[] = [];
+      const found: Record<string, PageKind> = {};
       for (const p of pages) {
         const page = await p.load().catch(() => null);
-        if (page && (await looksScanned(page).catch(() => false))) found.push(p.ref);
+        found[p.ref] = page ? await pageKind(page).catch((): PageKind => "text") : "text";
         if (cancelled) return;
       }
       if (!cancelled) {
-        setScanned(found);
-        setScope(found.length ? "scanned" : "all");
+        setKinds(found);
+        setScope(Object.values(found).some((k) => k !== "text") ? "scanned" : "all");
       }
     })();
     return () => { cancelled = true; };
@@ -69,7 +87,10 @@ export function OcrDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, progress]);
 
-  const targets = scope === "all" ? pages : pages.filter((p) => scanned?.includes(p.ref));
+  const scanned = kinds ? pages.filter((p) => kinds[p.ref] !== "text") : null;
+  const redo = kinds ? pages.filter((p) => kinds[p.ref] === "ocr").length : 0;
+  const withText = kinds ? pages.filter((p) => kinds[p.ref] === "text").length : 0;
+  const targets = scope === "all" ? pages : scanned ?? [];
 
   async function start() {
     setError(null);
@@ -77,19 +98,20 @@ export function OcrDialog({
     const ac = new AbortController();
     abort.current = ac;
     try {
-      const loaded: Array<{ ref: string; page: PDFPageProxy }> = [];
+      const loaded: OcrPageInput[] = [];
       for (const t of targets) {
         const page = await t.load();
-        if (page) loaded.push({ ref: t.ref, page });
+        if (page) loaded.push({ ref: t.ref, page, rotation: t.rotation, scanned: kinds?.[t.ref] !== "text" });
       }
       const result = await recognisePages(loaded, langs, setProgress, ac.signal);
-      const words = Object.values(result).reduce((n, lines) => n + lines.reduce((m, l) => m + l.words.length, 0), 0);
+      if (!upright) result.turns = {};
+      const words = Object.values(result.lines).reduce((n, lines) => n + lines.reduce((m, l) => m + l.words.length, 0), 0);
       if (words === 0) {
         setProgress(null);
         setError("No text was recognised. The pages may be blank, photos, or too blurry. Try a sharper scan.");
         return;
       }
-      onRecognised(result, { pages: Object.values(result).filter((l) => l.length).length, words });
+      onRecognised(result, { pages: Object.values(result.lines).filter((l) => l.length).length, words });
     } catch (e) {
       setProgress(null);
       if ((e as { name?: string }).name === "AbortError" || ac.signal.aborted) return;
@@ -104,6 +126,7 @@ export function OcrDialog({
     progress.status === "loading" ? "Loading the text recogniser…" :
     progress.status === "rendering" ? `Preparing page ${progress.page + 1} of ${progress.total}…` :
     progress.status === "recognising" ? `Reading page ${progress.page + 1} of ${progress.total}…` :
+    progress.status === "orienting" ? `Page ${progress.page + 1} reads poorly; checking if it's sideways…` :
     "Saving…";
 
   return (
@@ -136,14 +159,19 @@ export function OcrDialog({
                   <>
                     <label className="flex items-center gap-2.5 text-sm">
                       <input type="radio" name="ocr-scope" checked={scope === "scanned"} disabled={scanned.length === 0} onChange={() => setScope("scanned")} />
-                      Pages without text {scanned.length ? `(${scanned.length} of ${pages.length})` : "(none found)"}
+                      Scanned pages {scanned.length ? `(${scanned.length} of ${pages.length})` : "(none found)"}
                     </label>
                     <label className="flex items-center gap-2.5 text-sm">
                       <input type="radio" name="ocr-scope" checked={scope === "all"} onChange={() => setScope("all")} />
                       All pages ({pages.length})
                     </label>
-                    {scope === "all" && scanned.length < pages.length && (
-                      <p className="text-[13px] text-amber-800">Pages that already have text will get a second text layer, so search may show matches twice.</p>
+                    {redo > 0 && (
+                      <p className="text-[13px] text-zinc-600">
+                        {redo === 1 ? "1 page was" : `${redo} pages were`} recognised before. Recognising again replaces that text.
+                      </p>
+                    )}
+                    {scope === "all" && withText > 0 && (
+                      <p className="text-[13px] text-amber-800">Pages that already have real text will get a second text layer, so search may show matches twice.</p>
                     )}
                   </>
                 )}
@@ -159,6 +187,10 @@ export function OcrDialog({
                 ))}
                 <p className="text-[13px] text-zinc-500">Pick only the languages the pages contain; extra languages make it slower and less accurate. Hindi text becomes searchable and copyable; editing Hindi isn&apos;t supported yet.</p>
               </fieldset>
+              <label className="flex items-start gap-2.5 text-sm">
+                <input type="checkbox" className="mt-0.5" checked={upright} onChange={(e) => setUpright(e.target.checked)} />
+                <span>Turn sideways or upside-down pages upright<span className="block text-[13px] text-zinc-500">Pages are always read in the right direction; this also rotates them in the document.</span></span>
+              </label>
               {unsaved > 0 && <p className="rounded-lg bg-zinc-50 px-3 py-2 text-[13px] text-zinc-600">Your {unsaved} unsaved change{unsaved > 1 ? "s" : ""} will be saved in the same new version.</p>}
               {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
             </>

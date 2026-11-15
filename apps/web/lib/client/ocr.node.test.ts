@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createWorker, type Worker } from "tesseract.js";
 import { exportPdf } from "@pdfinkly/shared/export";
-import { blocksToLines } from "./ocrMap";
+import { blocksToLines, pickTurn, readingConfidence, type TBlock } from "./ocrMap";
 
 /**
  * Real Tesseract (same engine and language packs the browser uses) on scanned
@@ -120,3 +120,88 @@ describe("Edit text on OCR output", () => {
     expect(text).toContain("Invoice");
   }, 120_000);
 });
+
+/** Render page 1 of a PDF in Node like the browser does (pdf.js + @napi-rs/canvas), as PNG. */
+async function renderPng(bytes: Uint8Array, rotation: number, scale: number) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const task = pdfjs.getDocument({ data: bytes.slice(), disableFontFace: true, useSystemFonts: false });
+  const doc = await task.promise;
+  const page = await doc.getPage(1);
+  const vp = page.getViewport({ scale, rotation: (page.rotate + rotation) % 360 });
+  const { canvas } = (doc as unknown as { canvasFactory: { create(w: number, h: number): { canvas: { toBuffer(t: string): Buffer } } } })
+    .canvasFactory.create(Math.ceil(vp.width), Math.ceil(vp.height));
+  await page.render({ canvas: canvas as never, viewport: vp }).promise;
+  const view = page.view as [number, number, number, number];
+  const png = canvas.toBuffer("image/png");
+  await task.destroy();
+  return { png, view };
+}
+
+describe("sideways scans", () => {
+  const sideways = () => new Uint8Array(readFileSync(path.join(FIX, "scan-en-sideways.pdf")));
+
+  it("detects that the page must be turned 90° clockwise to read", async () => {
+    worker?.terminate();
+    worker = await createWorker(["eng"], 1, { langPath: langDir, cachePath: langDir, gzip: true });
+    const bytes = sideways();
+    const read = async (turn: number, scale: number) =>
+      readingConfidence((await worker!.recognize((await renderPng(bytes, turn, scale)).png, {}, { blocks: true })).data.blocks as unknown as TBlock[]);
+    const asIs = await read(0, 200 / 72);
+    expect(asIs.mean).toBeLessThan(50);
+    const scores = { 90: (await read(90, 120 / 72)).mean, 270: (await read(270, 120 / 72)).mean, 180: (await read(180, 120 / 72)).mean };
+    expect(pickTurn(asIs.mean, scores), JSON.stringify({ asIs, scores })).toBe(90);
+    // An upright page is left alone.
+    const upright = readingConfidence(data0(await worker.recognize((await renderPng(new Uint8Array(readFileSync(path.join(FIX, "scan-en.pdf"))), 0, 200 / 72)).png, {}, { blocks: true })));
+    expect(pickTurn(upright.mean, {})).toBe(0);
+  }, 180_000);
+
+  it("turned upright, the text layer is searchable and Edit text works in the reading direction", async () => {
+    const { textBlocks } = await import("../../components/editor/textBlocks");
+    const bytes = sideways();
+    const scale = 200 / 72;
+    const { png, view } = await renderPng(bytes, 90, scale);
+    worker ??= await createWorker(["eng"], 1, { langPath: langDir, cachePath: langDir, gzip: true });
+    const { data } = await worker.recognize(png, {}, { blocks: true });
+    const lines = blocksToLines(data.blocks as never, { pxPerPt: scale, view, rotate: 90 });
+    const ocred = await exportPdf({ base: bytes, ops: [{ op: "page.rotate", page: "p1", degrees: 90 }], ocr: { p1: lines } });
+    const items = await readBack(ocred);
+    const text = items.map((i) => i.str).join(" ");
+    for (const s of ["Aditi", "Sharma", "Product", "designer", "Invoice"]) expect(text).toContain(s);
+
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const task = pdfjs.getDocument({ data: ocred.slice(), fontExtraProperties: true, disableFontFace: true, useSystemFonts: false });
+    const page = await (await task.promise).getPage(1);
+    expect(page.rotate).toBe(90);
+    const blocks = await textBlocks(page);
+    await task.destroy();
+    const para = blocks.find((b) => b.text.startsWith("Product designer"))!;
+    expect(para, blocks.map((b) => `${b.rotation}:${b.text.slice(0, 20)}`).join(" | ")).toBeTruthy();
+    expect(para.rotation).toBe(90);
+    expect(para.lines.length).toBe(2);
+    expect(para.size).toBeGreaterThan(9.5);
+    expect(para.size).toBeLessThan(12);
+
+    const warnings: string[] = [];
+    const out = await exportPdf({
+      base: ocred, onWarning: (w) => warnings.push(w),
+      ops: [{ op: "annot.add", id: "x", page: "p1", annot: {
+        kind: "replace", rect: para.rect, cover: para.cover, text: "Rewritten on a turned page.", original: para.text,
+        face: "Helvetica", bold: false, italic: false, size: para.size, color: "#222222", bg: "#F9F5EC",
+        lineHeight: para.lineHeight, firstBaseline: para.firstBaseline, srcFont: para.font.raw, rotation: para.rotation,
+      } }],
+    });
+    expect(warnings).toEqual([]);
+    const after = await readBack(out);
+    const t2 = after.map((i) => i.str).join(" ");
+    expect(t2).toContain("Rewritten on a turned page.");
+    expect(t2).not.toContain("healthcare");
+    expect(t2).toContain("Invoice");
+    // Drawn in the same direction as the text it replaced (up the unrotated page).
+    const neu = after.find((i) => i.str.startsWith("Rewritten"))!;
+    expect(Math.abs(neu.transform[0]!)).toBeLessThan(0.01);
+    expect(neu.transform[1]!).toBeGreaterThan(0);
+  }, 180_000);
+});
+
+const data0 = (r: { data: { blocks: unknown } }) => r.data.blocks as TBlock[];
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { layoutReplaceLines, type Annotation, type Face, type Rect } from "@pdfinkly/shared";
+import { layoutReplaceLines, visualSize, visualToPage, type Annotation, type Face, type Rect } from "@pdfinkly/shared";
 import { rectToCss, toCss, type PageGeom } from "./geometry";
 
 export const FONT_CSS: Record<string, string> = {
@@ -30,7 +30,7 @@ export function measureFace(text: string, face: Face, bold: boolean, italic: boo
 
 type ReplaceAnnot = Extract<Annotation, { kind: "replace" }>;
 export const replaceLines = (a: ReplaceAnnot) =>
-  layoutReplaceLines(a.text, (s) => measureFace(s, a.face, a.bold, a.italic, a.size), Math.max(a.rect.w, a.size));
+  layoutReplaceLines(a.text, (s) => measureFace(s, a.face, a.bold, a.italic, a.size), Math.max(visualSize(a.rect, a.rotation ?? 0).w, a.size));
 
 export const hasRect = (a: Annotation): a is Extract<Annotation, { rect: Rect }> => "rect" in a;
 
@@ -127,11 +127,13 @@ export function ShapeSvg({ a, g }: { a: Annotation; g: PageGeom }) {
           })}
           {a.text && replaceLines(a).map((line, i) => {
             if (!line) return null;
-            const [x, y] = toCss(g, a.rect.x, a.rect.y + a.rect.h - a.firstBaseline - i * a.lineHeight);
+            const rot = a.rotation ?? 0;
+            const [x, y] = toCss(g, ...visualToPage(a.rect, rot, 0, a.firstBaseline + i * a.lineHeight));
+            const turn = (g.rotation - rot + 360) % 360;
             return (
               <text key={i} x={x} y={y} fill={a.color} fontFamily={FACE_CSS[a.face]} fontSize={a.size * g.scale}
                 fontWeight={a.bold ? 700 : 400} fontStyle={a.italic ? "italic" : "normal"} style={{ whiteSpace: "pre" }}
-                transform={g.rotation ? `rotate(${g.rotation} ${x} ${y})` : undefined}>
+                transform={turn ? `rotate(${turn} ${x} ${y})` : undefined}>
                 {line}
               </text>
             );

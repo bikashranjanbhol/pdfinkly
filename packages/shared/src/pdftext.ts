@@ -206,3 +206,23 @@ export function removeTextFromPageDetailed(doc: PDFDocument, page: PDFPage, grou
   if (bytes) setPageContent(doc, page, bytes);
   return { removed, invisible };
 }
+
+/**
+ * Delete a text layer added by an earlier OCR run (glyphs drawn with the
+ * PDFInkly-OCR font) from the page, so recognising again replaces it instead of
+ * stacking a second copy. Returns the number of glyphs removed.
+ */
+export function removeOcrLayer(doc: PDFDocument, page: PDFPage, fontName: string): number {
+  const fontDict = page.node.Resources()?.lookupMaybe(PDFName.of("Font"), PDFDict);
+  if (!fontDict) return 0;
+  const names = new Set<string>();
+  for (const key of fontDict.keys()) {
+    const f = fontDict.lookupMaybe(key, PDFDict);
+    const base = f?.lookupMaybe(PDFName.of("BaseFont"), PDFName)?.decodeText();
+    if (base === fontName) names.add(key.decodeText());
+  }
+  if (names.size === 0) return 0;
+  const huge = 1e7;
+  const { removed } = removeTextFromPageDetailed(doc, page, [{ id: "ocr", rects: [{ x: -huge, y: -huge, w: 2 * huge, h: 2 * huge }], fonts: names }]);
+  return removed.ocr ?? 0;
+}

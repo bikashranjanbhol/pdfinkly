@@ -16,10 +16,12 @@ import {
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { faceFile, layoutReplaceLines } from "./fonts";
+import { visualSize, visualToPage } from "./visual";
+export { visualSize, visualToPage } from "./visual";
 export { layoutReplaceLines } from "./fonts";
 import { deriveModel, type Annotation, type DocModel, type Face, type FontName, type Operation, type PageEntry, type Rect } from "./operations";
-import { drawOcrLayer, type OcrLine } from "./ocr";
-import { removeTextFromPageDetailed } from "./pdftext";
+import { drawOcrLayer, OCR_FONT_NAME, type OcrLine } from "./ocr";
+import { removeOcrLayer, removeTextFromPageDetailed } from "./pdftext";
 
 export interface ExportInput {
   /** Bytes of the base version the operations were made against. */
@@ -55,25 +57,6 @@ async function load(bytes: Uint8Array): Promise<PDFDocument> {
     throw new ExportError("INVALID_PDF", msg);
   }
 }
-
-/**
- * Map a point given in "visual" coordinates (u to the right, v downward, from
- * the visual top-left of `rect` as seen with total rotation `rot`) into the
- * page's unrotated PDF space.
- */
-export function visualToPage(rect: Rect, rot: number, u: number, v: number): [number, number] {
-  const x0 = rect.x, y0 = rect.y, x1 = rect.x + rect.w, y1 = rect.y + rect.h;
-  switch (((rot % 360) + 360) % 360) {
-    case 90: return [x0 + v, y0 + u];
-    case 180: return [x1 - u, y0 + v];
-    case 270: return [x1 - v, y1 - u];
-    default: return [x0 + u, y1 - v];
-  }
-}
-
-/** Width and height of `rect` as seen on screen with rotation `rot`. */
-export const visualSize = (rect: Rect, rot: number) =>
-  rot % 180 === 0 ? { w: rect.w, h: rect.h } : { w: rect.h, h: rect.w };
 
 const FONT_MAP: Record<FontName, StandardFonts> = {
   Helvetica: StandardFonts.Helvetica,
@@ -292,7 +275,9 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning,
   if (ocr) {
     for (const [ref, lines] of Object.entries(ocr)) {
       const page = pagesByRef.get(ref);
-      if (page && lines.length) drawOcrLayer(out, page, lines);
+      if (!page || !lines.length) continue;
+      try { removeOcrLayer(out, page, OCR_FONT_NAME); } catch { /* keep the old layer rather than fail the save */ }
+      drawOcrLayer(out, page, lines);
     }
   }
   if (incomplete.size) {
@@ -319,11 +304,12 @@ async function drawReplace(page: PDFPage, a: ReplaceAnnot, cover: boolean, faceF
   }
   const font = await faceFont(a.face, a.bold, a.italic);
   const text = sanitize(a.text, font);
-  const lines = layoutReplaceLines(text, (s) => font.widthOfTextAtSize(s, a.size), Math.max(a.rect.w, a.size));
-  const top = a.rect.y + a.rect.h;
+  const rot = a.rotation ?? 0;
+  const lines = layoutReplaceLines(text, (s) => font.widthOfTextAtSize(s, a.size), Math.max(visualSize(a.rect, rot).w, a.size));
   lines.forEach((line, i) => {
     if (!line) return;
-    page.drawText(line, { x: a.rect.x, y: top - a.firstBaseline - i * a.lineHeight, size: a.size, font, color: hex(a.color) });
+    const [x, y] = visualToPage(a.rect, rot, 0, a.firstBaseline + i * a.lineHeight);
+    page.drawText(line, { x, y, size: a.size, font, color: hex(a.color), ...(rot ? { rotate: degrees(rot) } : {}) });
   });
 }
 

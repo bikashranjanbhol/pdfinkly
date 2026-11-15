@@ -46,7 +46,11 @@ The **Edit text** tool works on text that's already in the PDF, not just text yo
   Helvetica for Arial and other sans fonts, Times for serif fonts, Courier for monospace.
 - **Tested producers:** Chrome, LibreOffice/Word-style TrueType, pdfLaTeX (Type 1, kerned), wkhtmltopdf.
 
-Limits: scanned pages need OCR first (below); rotated text and text inside Form XObjects isn't removed (it's covered
+- **Rotated pages.** Text in any of the four directions is detected; text that reads upright on screen is
+  editable (on a page shown rotated 90°, that's text running up the unrotated page). When a page's text runs
+  sideways the editor offers **Turn page upright**. Every page also has rotate left/right buttons under it.
+
+Limits: scanned pages need OCR first (below); text at other angles and text inside Form XObjects isn't removed (it's covered
 and the user is warned); Hindi and other complex scripts aren't supported for redrawing yet; a paragraph
 re-wraps inside its own box but doesn't push the content below it down.
 
@@ -60,8 +64,13 @@ for OCR and there is no server cost.
   self-hosted: `scripts/copy-pdf-worker.mjs` copies the worker, the core builds and the models into
   `public/tesseract` and `public/tessdata` at install time, so no CDN is involved. Models download once
   (about 3 MB English and 1.4 MB Hindi, gzipped) plus a ~4 MB engine, and are cached by the browser.
-- **Scope and languages.** By default only pages without a text layer are recognised; "All pages" is available.
-  English, Hindi, or both; the choice is remembered.
+- **Scope and languages.** By default only scanned pages are recognised (no text layer, or only text from an
+  earlier OCR run, which is replaced rather than duplicated); "All pages" is available. English, Hindi, or both;
+  the choice is remembered.
+- **Sideways and upside-down scans.** A page that reads poorly as shown (mean word confidence under 65%) is tried
+  turned 90°, 270° and 180° on a quick ~120 dpi render; if one reads clearly better, the page is recognised that
+  way and, unless the user unticks the option, turned upright in the saved version. Upright text scores ~90%,
+  sideways text ~20–40%, so the check is reliable and costs nothing on pages that are already upright.
 - **Accuracy.** Each page is rendered at the scan's own resolution (200–400 dpi) and despeckled. Low-confidence
   stray punctuation is dropped, and words on a slightly skewed line are snapped onto one baseline.
 - **Output.** Saving writes a new version with an invisible text layer (render mode 3) under the scan, drawn

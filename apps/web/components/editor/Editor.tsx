@@ -17,7 +17,7 @@ import { api, ApiFailure, saveBytes } from "@/lib/client/api";
 import { fetchBytes, openPdf, uploadNewPdf, uploadNewVersion } from "@/lib/client/pdf";
 import type { OcrLine } from "@pdfinkly/shared";
 import { looksScanned } from "@/lib/client/ocr";
-import { IconBack, IconCheck, IconDownload, IconHistory, IconScan, IconShare } from "../icons";
+import { IconBack, IconCheck, IconDownload, IconHistory, IconRotateL, IconRotateR, IconScan, IconShare } from "../icons";
 import { OcrDialog, type OcrPageRef } from "./OcrDialog";
 import { Mark } from "../Logo";
 import { runExport } from "./exportClient";
@@ -88,7 +88,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   const savingOcr = useRef(false);
 
   // Pages the OCR dialog can work on (blank inserted pages have nothing to read).
-  const pageKey = model?.pages.map((p) => p.ref).join("|") ?? "";
+  const pageKey = model?.pages.map((p) => `${p.ref}@${p.rotation}`).join("|") ?? "";
   const ocrPages = useMemo<OcrPageRef[]>(() => {
     if (!doc || !model) return [];
     return model.pages.flatMap((p, i) => {
@@ -96,7 +96,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
       if (src.kind === "blank") return [];
       const pdf = src.kind === "base" ? doc.base : doc.ext[src.versionId];
       if (!pdf) return [];
-      return [{ ref: p.ref, label: `Page ${i + 1}`, load: () => pdf.getPage(src.index + 1) }];
+      return [{ ref: p.ref, label: `Page ${i + 1}`, rotation: p.rotation, load: () => pdf.getPage(src.index + 1) }];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, pageKey]);
@@ -451,7 +451,13 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
                 {model.pages.map((p, i) => (
                   <div key={p.ref} id={`page-${p.ref}`} className="flex flex-col items-center gap-1.5">
                     <PageView entry={p} label={`Page ${i + 1}`} scale={zoom} interactive annotations={model.annotations.filter((a) => a.page === p.ref)} />
-                    <span className="text-xs text-zinc-500">{i + 1}</span>
+                    <div className="flex items-center gap-1 text-xs text-zinc-500">
+                      <button type="button" className="btn-ghost min-h-8 px-1.5" title="Rotate left" aria-label={`Rotate page ${i + 1} left`}
+                        onClick={() => useEditor.getState().apply({ op: "page.rotate", page: p.ref, degrees: 270 })}><IconRotateL size={16} /></button>
+                      <span className="min-w-6 text-center tabular-nums">{i + 1}</span>
+                      <button type="button" className="btn-ghost min-h-8 px-1.5" title="Rotate right" aria-label={`Rotate page ${i + 1} right`}
+                        onClick={() => useEditor.getState().apply({ op: "page.rotate", page: p.ref, degrees: 90 })}><IconRotateR size={16} /></button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -470,10 +476,14 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
             onClose={() => setDialog(null)}
             onRecognised={(result, stats) => {
               setDialog(null);
+              // Turn sideways pages upright in the same version (the text layer doesn't depend on it).
+              const turns = Object.entries(result.turns);
+              if (turns.length) useEditor.getState().apply(...turns.map(([page, degrees]) => ({ op: "page.rotate" as const, page, degrees })));
+              const turned = turns.length ? ` Turned ${turns.length === 1 ? "1 sideways page" : `${turns.length} sideways pages`} upright.` : "";
               savingOcr.current = true;
               void saveVersion({
-                result,
-                message: `Recognised ${stats.words.toLocaleString()} words on ${stats.pages} page${stats.pages > 1 ? "s" : ""} and saved a new version. You can now search, copy and edit the text (Edit text tool).`,
+                result: result.lines,
+                message: `Recognised ${stats.words.toLocaleString()} words on ${stats.pages} page${stats.pages > 1 ? "s" : ""} and saved a new version.${turned} You can now search, copy and edit the text (Edit text tool).`,
               }).finally(() => { savingOcr.current = false; });
             }}
           />

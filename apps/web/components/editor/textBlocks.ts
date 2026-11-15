@@ -1,9 +1,9 @@
 "use client";
 
 import type { PDFPageProxy } from "pdfjs-dist";
-import type { Rect } from "@pdfinkly/shared";
+import { OCR_FONT_NAME, rectFromTextFrame, textRotation, toTextFrame, type Rect } from "@pdfinkly/shared";
 
-/** One run of same-font text on one baseline. */
+/** One run of same-font text on one baseline (in the block's text frame). */
 export interface TextLine {
   text: string;
   x: number;
@@ -17,6 +17,12 @@ export interface TextBlock {
   lines: TextLine[];
   /** Box from the first line's ascender to the last line's descender (PDF space). */
   rect: Rect;
+  /**
+   * Direction of the text, degrees counter-clockwise in PDF space (0 = normal,
+   * 90 = runs up the unrotated page, i.e. upright on a page shown rotated 90°).
+   * `firstBaseline` and `lineHeight` are measured in that direction.
+   */
+  rotation: 0 | 90 | 180 | 270;
   /** Per-line boxes whose glyphs get removed on save. */
   cover: Rect[];
   text: string;
@@ -32,7 +38,7 @@ export interface TextBlock {
   };
 }
 
-interface Item { str: string; x: number; y: number; w: number; size: number; font: string }
+interface Item { str: string; x: number; y: number; w: number; size: number; font: string; rot: 0 | 90 | 180 | 270 }
 
 type FontObj = { name?: string; isSerifFont?: boolean; isMonospace?: boolean; missingFile?: boolean };
 
@@ -78,11 +84,35 @@ async function extract(page: PDFPageProxy): Promise<TextBlock[]> {
   for (const raw of tc.items as Array<{ str?: string; transform?: number[]; width?: number; fontName?: string }>) {
     const t = raw.transform;
     if (!raw.str || !t || !raw.fontName) continue;
-    // Horizontal, upright text only (rotated/skewed text isn't editable yet).
-    if (Math.abs(t[1]!) > 1e-3 || Math.abs(t[2]!) > 1e-3 || t[0]! <= 0 || t[3]! <= 0) continue;
-    if (!raw.str.trim()) continue;
-    items.push({ str: raw.str, x: t[4]!, y: t[5]!, w: raw.width ?? 0, size: t[3]!, font: raw.fontName });
+    // Axis-aligned text in any of the four directions (skewed text isn't editable).
+    const rot = textRotation(t[0]!, t[1]!, t[2]!, t[3]!);
+    if (rot === null || !raw.str.trim()) continue;
+    // Work in the text's own frame, where it runs left to right with y up.
+    const [x, y] = toTextFrame(rot, t[4]!, t[5]!);
+    items.push({ str: raw.str, x, y, w: raw.width ?? 0, size: Math.hypot(t[2]!, t[3]!), font: raw.fontName, rot });
   }
+
+  const blocks: TextBlock[] = [];
+  for (const rot of [0, 90, 180, 270] as const) {
+    const mine = items.filter((i) => i.rot === rot);
+    if (mine.length) blocks.push(...(await group(mine, rot, styles, fontInfo)));
+  }
+  return blocks;
+}
+
+async function group(
+  items: Item[],
+  rot: 0 | 90 | 180 | 270,
+  styles: Record<string, { ascent?: number; descent?: number }>,
+  fontInfo: (name: string) => Promise<FontObj | null>,
+): Promise<TextBlock[]> {
+
+  const fonts = new Map<string, FontObj | null>();
+  await Promise.all([...new Set(items.map((i) => i.font))].map(async (n) => fonts.set(n, await fontInfo(n))));
+  // Recognised (OCR) text gets a size per line from the scan, so sizes within a
+  // paragraph wobble by a few percent; real fonts are exact.
+  const sameSize = (font: string, a: number, b: number) =>
+    Math.abs(a - b) <= (fonts.get(font)?.name === OCR_FONT_NAME ? Math.max(0.2, Math.max(a, b) * 0.08) : 0.2);
 
   // 1) Rows: cluster by baseline.
   items.sort((a, b) => b.y - a.y || a.x - b.x);
@@ -101,7 +131,7 @@ async function extract(page: PDFPageProxy): Promise<TextBlock[]> {
     let cur: Seg | null = null;
     for (const it of row) {
       const gap = cur ? it.x - cur.x1 : 0;
-      if (cur && cur.font === it.font && Math.abs(cur.size - it.size) < 0.2 && gap < it.size * 0.9 && gap > -it.size * 0.3) {
+      if (cur && cur.font === it.font && sameSize(it.font, cur.size, it.size) && gap < it.size * 0.9 && gap > -it.size * 0.3) {
         const needSpace = gap > it.size * 0.12 && !cur.text.endsWith(" ") && !it.str.startsWith(" ");
         cur.text += (needSpace ? " " : "") + it.str;
         cur.x1 = Math.max(cur.x1, it.x + it.w);
@@ -121,7 +151,7 @@ async function extract(page: PDFPageProxy): Promise<TextBlock[]> {
       const last = d.lines[d.lines.length - 1]!;
       const first = d.lines[0]!;
       const dy = last.baseline - s.baseline;
-      if (last.font !== s.font || Math.abs(last.size - s.size) > 0.2) return false;
+      if (last.font !== s.font || !sameSize(s.font, last.size, s.size)) return false;
       if (Math.abs(first.x - s.x) > s.size * 0.6) return false;
       if (dy < s.size * 0.9 || dy > s.size * 1.9) return false;
       if (d.gap !== null && Math.abs(dy - d.gap) > d.gap * 0.25) return false;
@@ -133,8 +163,6 @@ async function extract(page: PDFPageProxy): Promise<TextBlock[]> {
     } else drafts.push({ lines: [s], gap: null });
   }
 
-  const fonts = new Map<string, FontObj | null>();
-  await Promise.all([...new Set(drafts.map((d) => d.lines[0]!.font))].map(async (n) => fonts.set(n, await fontInfo(n))));
 
   return drafts.map((d) => {
     const first = d.lines[0]!;
@@ -148,14 +176,19 @@ async function extract(page: PDFPageProxy): Promise<TextBlock[]> {
     const bottom = d.lines[d.lines.length - 1]!.baseline - descent * size;
     const f = fonts.get(first.font) ?? null;
     // OCR text sits over a scanned image whose lines may be slightly tilted: cover a bit more.
-    const ocr = f?.name === "PDFInkly-OCR";
+    const ocr = f?.name === OCR_FONT_NAME;
     const padY = ocr ? size * 0.2 : 0;
     const padX = ocr ? size * 0.1 : 0;
+    const back = (r: Rect): Rect => {
+      const p = rectFromTextFrame(rot, r);
+      return { x: r2(p.x), y: r2(p.y), w: r2(p.w), h: r2(p.h) };
+    };
     return {
-      key: `${Math.round(left)}:${Math.round(first.baseline)}`,
+      key: `${rot}:${Math.round(left)}:${Math.round(first.baseline)}`,
       lines: d.lines.map(({ text, x, x1, baseline }) => ({ text, x, x1, baseline })),
-      rect: { x: r2(left), y: r2(bottom), w: r2(right - left), h: r2(top - bottom) },
-      cover: d.lines.map((l) => ({ x: r2(l.x - padX), y: r2(l.baseline - descent * size - padY), w: r2(l.x1 - l.x + padX * 2), h: r2((ascent + descent) * size + padY * 2) })),
+      rect: back({ x: left, y: bottom, w: right - left, h: top - bottom }),
+      rotation: rot,
+      cover: d.lines.map((l) => back({ x: l.x - padX, y: l.baseline - descent * size - padY, w: l.x1 - l.x + padX * 2, h: (ascent + descent) * size + padY * 2 })),
       text: d.lines.map((l) => l.text).join("\n"),
       size: r2(size),
       lineHeight: r2(d.gap ?? size * 1.2),

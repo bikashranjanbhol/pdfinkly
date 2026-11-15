@@ -2,7 +2,7 @@
 
 import type { PDFPageProxy } from "pdfjs-dist";
 import type { OcrLine } from "@pdfinkly/shared";
-import { blocksToLines } from "./ocrMap";
+import { blocksToLines, pickTurn, readingConfidence, UPRIGHT_CONFIDENCE, type TBlock } from "./ocrMap";
 import { pdfjs } from "./pdf";
 
 export type OcrLang = "eng" | "hin";
@@ -15,7 +15,22 @@ export interface OcrProgress {
   total: number;
   /** Overall progress 0..1. */
   fraction: number;
-  status: "loading" | "rendering" | "recognising" | "done";
+  status: "loading" | "rendering" | "recognising" | "orienting" | "done";
+}
+
+export interface OcrPageInput {
+  ref: string;
+  page: PDFPageProxy;
+  /** Rotation added in the editor on top of the page's own /Rotate. */
+  rotation: number;
+  /** The page is a scan (even if an earlier OCR run gave it a text layer). Detected when omitted. */
+  scanned?: boolean;
+}
+
+export interface OcrResult {
+  lines: Record<string, OcrLine[]>;
+  /** Clockwise turns that make sideways or upside-down pages read upright. */
+  turns: Record<string, 90 | 180 | 270>;
 }
 
 /** Pages with fewer extractable characters than this are treated as scans. */
@@ -85,25 +100,44 @@ function despeckle(canvas: HTMLCanvasElement) {
   ctx.putImageData(img, 0, 0);
 }
 
+/** Render a page upright-as-displayed with an extra clockwise rotation. */
+async function renderPage(page: PDFPageProxy, rotation: number, scale: number, clean: boolean) {
+  const vp = page.getViewport({ scale, rotation: ((rotation % 360) + 360) % 360 });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(vp.width);
+  canvas.height = Math.ceil(vp.height);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvas, viewport: vp }).promise;
+  if (clean) despeckle(canvas);
+  return canvas;
+}
+
+/** Pixels per point for orientation probes (~120 dpi: enough to read, quick to run). */
+const PROBE_SCALE = 120 / 72;
+
 /**
  * Recognise text on PDF pages in the browser with Tesseract (self-hosted engine
- * and models). Each page is rendered upright at ~300 dpi; results come back as
- * text-layer lines in the page's PDF space, keyed by page ref.
+ * and models). Each page is rendered as displayed at ~300 dpi; pages that read
+ * poorly are tried turned 90°, 180° and 270°, and recognised in whichever way
+ * reads best. Results come back as text-layer lines in each page's PDF space,
+ * keyed by page ref, plus the turns that make sideways pages upright.
  */
 export async function recognisePages(
-  pages: Array<{ ref: string; page: PDFPageProxy }>,
+  pages: OcrPageInput[],
   langs: OcrLang[],
   onProgress: (p: OcrProgress) => void,
   signal?: AbortSignal,
-): Promise<Record<string, OcrLine[]>> {
+): Promise<OcrResult> {
   const total = pages.length;
-  const out: Record<string, OcrLine[]> = {};
+  const out: OcrResult = { lines: {}, turns: {} };
   if (total === 0) return out;
 
   onProgress({ page: 0, total, fraction: 0, status: "loading" });
   const { createWorker } = await import("tesseract.js");
   let current = 0;
-  let pageFraction = 0;
+  let probing = false;
   const worker = await createWorker(langs, 1 /* LSTM only */, {
     workerPath: "/tesseract/worker.min.js",
     corePath: "/tesseract",
@@ -111,49 +145,72 @@ export async function recognisePages(
     gzip: true,
     workerBlobURL: false,
     logger: (m) => {
-      if (m.status === "recognizing text") {
-        pageFraction = m.progress;
-        onProgress({ page: current, total, fraction: (current + 0.15 + 0.85 * pageFraction) / total, status: "recognising" });
+      if (m.status === "recognizing text" && !probing) {
+        onProgress({ page: current, total, fraction: (current + 0.15 + 0.85 * m.progress) / total, status: "recognising" });
       }
     },
   });
   const abort = () => void worker.terminate();
   signal?.addEventListener("abort", abort);
+  const check = () => { if (signal?.aborted) throw new DOMException("Cancelled", "AbortError"); };
 
   try {
     for (let i = 0; i < total; i++) {
-      if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+      check();
       current = i;
-      pageFraction = 0;
       onProgress({ page: i, total, fraction: i / total, status: "rendering" });
-      const { ref, page } = pages[i]!;
+      const { ref, page, rotation, scanned: known } = pages[i]!;
+      const shown = (page.rotate + rotation) % 360;
 
-      // Render upright (with the page's own rotation). Scans are rendered at their own
-      // resolution (clamped to 200–400 dpi) so their noise isn't resampled into blobs;
-      // other pages at 300 dpi. Capped for memory.
-      const base = page.getViewport({ scale: 1, rotation: page.rotate });
-      const scanned = await looksScanned(page).catch(() => false);
+      // Scans are rendered at their own resolution (clamped to 200–400 dpi) so their
+      // noise isn't resampled into blobs; other pages at 300 dpi. Capped for memory.
+      const base = page.getViewport({ scale: 1, rotation: shown });
+      const scanned = known ?? (await looksScanned(page).catch(() => false));
       const native = scanned ? await imageResolution(page).catch(() => null) : null;
       const target = native ? Math.min(400 / 72, Math.max(200 / 72, native)) : 300 / 72;
       const scale = Math.min(target, 4200 / Math.max(base.width, base.height));
-      const vp = page.getViewport({ scale, rotation: page.rotate });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(vp.width);
-      canvas.height = Math.ceil(vp.height);
-      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvas, viewport: vp }).promise;
-      if (native) despeckle(canvas);
 
-      if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-      const { data } = await worker.recognize(canvas, {}, { blocks: true, text: false });
-      out[ref] = blocksToLines(data.blocks as never, {
+      const read = async (turn: number) => {
+        const canvas = await renderPage(page, shown + turn, scale, !!native);
+        check();
+        const { data } = await worker.recognize(canvas, {}, { blocks: true, text: false });
+        canvas.width = canvas.height = 0; // free the bitmap early
+        return data.blocks as unknown as TBlock[];
+      };
+
+      let turn: 0 | 90 | 180 | 270 = 0;
+      let blocks = await read(0);
+      const conf = readingConfidence(blocks);
+      if (conf.words >= 3 && conf.mean < UPRIGHT_CONFIDENCE) {
+        // Reads poorly as shown: maybe the page is sideways or upside down. Try the
+        // other orientations on a quick low-resolution render.
+        onProgress({ page: i, total, fraction: (i + 0.6) / total, status: "orienting" });
+        probing = true;
+        const scores: Partial<Record<90 | 180 | 270, number>> = {};
+        try {
+          for (const t of [90, 270, 180] as const) {
+            check();
+            const small = await renderPage(page, shown + t, Math.min(PROBE_SCALE, scale), false);
+            const { data } = await worker.recognize(small, {}, { blocks: true, text: false });
+            small.width = small.height = 0;
+            scores[t] = readingConfidence(data.blocks as unknown as TBlock[]).mean;
+          }
+        } finally {
+          probing = false;
+        }
+        turn = pickTurn(conf.mean, scores);
+        if (turn) {
+          onProgress({ page: i, total, fraction: (i + 0.7) / total, status: "recognising" });
+          blocks = await read(turn);
+          out.turns[ref] = turn;
+        }
+      }
+
+      out.lines[ref] = blocksToLines(blocks, {
         pxPerPt: scale,
         view: page.view as [number, number, number, number],
-        rotate: page.rotate,
+        rotate: (shown + turn) % 360,
       });
-      canvas.width = canvas.height = 0; // free the bitmap early
     }
     onProgress({ page: total - 1, total, fraction: 1, status: "done" });
     return out;

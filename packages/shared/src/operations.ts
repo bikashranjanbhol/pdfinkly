@@ -61,6 +61,12 @@ export const AnnotationSchema = z.discriminatedUnion("kind", [
     firstBaseline: num.min(0).max(600),
     /** The PDF's own font name, e.g. "BAAAAA+Carlito-Bold" (shown to the user). */
     srcFont: z.string().max(200),
+    /**
+     * Direction of the original text (degrees counter-clockwise in PDF space):
+     * 90 for text that reads upright on a page shown rotated 90°. `rect`,
+     * `firstBaseline` and line layout are measured as seen in that direction.
+     */
+    rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
   }),
 ]);
 export type Annotation = z.infer<typeof AnnotationSchema>;

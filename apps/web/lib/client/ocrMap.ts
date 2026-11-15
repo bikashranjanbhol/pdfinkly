@@ -17,7 +17,7 @@ export interface MapOptions {
   pxPerPt: number;
   /** page.view of the PDF page ([x0, y0, x1, y1]). */
   view: [number, number, number, number];
-  /** The page's own /Rotate (the render was made upright with it). */
+  /** Rotation the page was rendered with (its /Rotate, plus any turn applied for reading). */
   rotate: number;
   /** Words below this confidence are dropped (noise, stamps, photos). */
   minConfidence?: number;
@@ -97,3 +97,42 @@ export function blocksToLines(blocks: TBlock[] | null | undefined, opts: MapOpti
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/* --------------------------------------------------------- orientation */
+
+/** Mean word confidence (weighted by length) at or above which a page reads upright. */
+export const UPRIGHT_CONFIDENCE = 65;
+
+/**
+ * How well Tesseract could read a page: the mean confidence of its words,
+ * weighted by length (0–100), and how many words it found. Text read sideways
+ * or upside down comes back as many short low-confidence fragments, so the
+ * mean drops to ~20–40 while upright text scores ~90.
+ */
+export function readingConfidence(blocks: TBlock[] | null | undefined): { mean: number; words: number } {
+  let chars = 0, sum = 0, words = 0;
+  for (const b of blocks ?? []) for (const p of b.paragraphs ?? []) for (const l of p.lines ?? []) for (const w of l.words ?? []) {
+    const n = w.text.trim().length;
+    if (!n) continue;
+    words++;
+    chars += n;
+    sum += w.confidence * n;
+  }
+  return { mean: chars ? sum / chars : 0, words };
+}
+
+/**
+ * Pick the clockwise turn (0, 90, 180 or 270) that makes a page readable, given
+ * the confidence as rendered and when turned by each amount. Only turns when the
+ * page reads poorly as it is and clearly better turned.
+ */
+export function pickTurn(current: number, turned: Partial<Record<90 | 180 | 270, number>>): 0 | 90 | 180 | 270 {
+  if (current >= UPRIGHT_CONFIDENCE) return 0;
+  let best: 0 | 90 | 180 | 270 = 0;
+  let bestScore = current;
+  for (const t of [90, 270, 180] as const) {
+    const s = turned[t];
+    if (s !== undefined && s > bestScore) { best = t; bestScore = s; }
+  }
+  return best && bestScore >= UPRIGHT_CONFIDENCE && bestScore - current >= 20 ? best : 0;
+}

@@ -104,4 +104,55 @@ describe("OCR text layer", () => {
     const content = new TextDecoder("latin1").decode(pageContent(doc.getPage(0)));
     expect(content).toMatch(/0\.96\d* 0\.9[56]\d* 0\.9\d* rg/); // #F7F5ED fill
   });
+
+  it("recognising again replaces the old OCR layer instead of adding a second one", async () => {
+    const first = await exportPdf({ base: await scanPdf(), ops: [], ocr: { p1: [line([["J0nk", 72, 40], ["w0rds", 116, 40]], 700)] } });
+    const again = await exportPdf({ base: first, ops: [], ocr: { p1: [line([["Real", 72, 30], ["words", 106, 36]], 700)] } });
+    const { items } = await textItems(again);
+    const text = items.map((i) => i.str).join(" ");
+    expect(text).toContain("Real");
+    expect(text).toContain("words");
+    expect(text).not.toContain("J0nk");
+    expect(text).not.toContain("w0rds");
+    // Other text on the page is untouched.
+    const doc = await PDFDocument.load(again);
+    const font = await doc.embedFont("Helvetica");
+    doc.getPage(0).drawText("Typed", { x: 72, y: 500, size: 12, font });
+    const third = await exportPdf({ base: await doc.save(), ops: [], ocr: { p1: [line([["Final", 72, 30]], 700)] } });
+    const t3 = (await textItems(third)).items.map((i) => i.str).join(" ");
+    expect(t3).toContain("Typed");
+    expect(t3).toContain("Final");
+    expect(t3).not.toContain("Real");
+  });
+
+  it("edits text on a rotated page in the reading direction", async () => {
+    // Page shown rotated 90°; OCR text runs up the unrotated page.
+    const withOcr = await exportPdf({
+      base: await scanPdf(90),
+      ops: [],
+      ocr: { p1: [{ dir: [0, 1], words: [{ text: "Engineer", x: 300, y: 100, w: 60, size: 12 }, { text: "Keep", x: 300, y: 200, w: 30, size: 12 }] }] },
+    });
+    // As seen upright: the word's box spans x 290.4..302.4 (descent below the baseline is +x), y 100..160.
+    const out = await exportPdf({
+      base: withOcr,
+      ops: [{
+        op: "annot.add", id: "r", page: "p1", annot: {
+          kind: "replace", rect: { x: 290.4, y: 100, w: 12, h: 60 }, cover: [{ x: 290.4, y: 99, w: 12, h: 62 }],
+          text: "Developer", original: "Engineer", face: "Helvetica", bold: false, italic: false, size: 12,
+          color: "#111111", bg: "#FFFFFF", lineHeight: 14, firstBaseline: 9.6, srcFont: "PDFInkly-OCR", rotation: 90,
+        },
+      }],
+    });
+    const { items } = await textItems(out);
+    const text = items.map((i) => i.str).join(" ");
+    expect(text).toContain("Developer");
+    expect(text).not.toContain("Engineer");
+    expect(text).toContain("Keep");
+    const dev = items.find((i) => i.str.includes("Developer"))!;
+    expect(dev.t[0]).toBeCloseTo(0, 3);
+    expect(dev.t[1]).toBeCloseTo(12, 1); // runs along +y like the original
+    expect(dev.t[4]).toBeCloseTo(300, 1); // on the original baseline (x = 290.4 + 9.6)
+    expect(dev.t[5]).toBeCloseTo(100, 1);
+  });
 });
+

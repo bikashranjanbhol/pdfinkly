@@ -137,6 +137,18 @@ export function PageView({
     return <div ref={wrap} className="flex-none animate-pulse bg-white shadow" style={{ width: 612 * scale, height: 792 * scale }} aria-label={`${label}, loading`} />;
   }
 
+  // Only text that reads upright on screen is editable in place.
+  const upright = blocks?.filter((b) => b.rotation === g.rotation) ?? null;
+  // When none does, the turn (clockwise) that would make most of the page's text upright.
+  const sidewaysTurn = (() => {
+    if (!blocks?.length || upright?.length) return null;
+    const count = new Map<number, number>();
+    for (const b of blocks) count.set(b.rotation, (count.get(b.rotation) ?? 0) + b.text.length);
+    const [rot] = [...count].sort((a, b) => b[1] - a[1])[0]!;
+    const turn = (rot - g.rotation + 360) % 360;
+    return turn === 90 || turn === 180 || turn === 270 ? (turn as 90 | 180 | 270) : null;
+  })();
+
   const point = (e: React.PointerEvent) => {
     const r = wrap.current!.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top] as const;
@@ -175,6 +187,7 @@ export function PageView({
       lineHeight: block.lineHeight,
       firstBaseline: block.firstBaseline,
       srcFont: block.font.raw.slice(0, 200),
+      ...(block.rotation ? { rotation: block.rotation } : {}),
     }, true);
     freshReplace.add(id);
     setHoverBlock(null);
@@ -371,7 +384,7 @@ export function PageView({
 
       {interactive && tool === "edittext" && !editingText && (
         <>
-          {blocks?.filter((b) => !shown.some((p) => p.annot.kind === "replace" && overlaps(p.annot.cover, b.cover))).map((b) => {
+          {upright?.filter((b) => !shown.some((p) => p.annot.kind === "replace" && overlaps(p.annot.cover, b.cover))).map((b) => {
             const c = rectToCss(g, b.rect);
             const hot = hoverBlock === b.key;
             const editable = editableScript(b.text);
@@ -395,7 +408,7 @@ export function PageView({
               </div>
             );
           })}
-          {shown.filter((p) => p.annot.kind === "replace").map((p) => {
+          {shown.filter((p) => p.annot.kind === "replace" && (p.annot.rotation ?? 0) === g.rotation).map((p) => {
             const c = rectToCss(g, boundsOf(p.annot));
             return (
               <div key={p.id} role="button" tabIndex={0} aria-label="Edit this text again"
@@ -408,6 +421,13 @@ export function PageView({
           })}
           {wantsBlocks && blocks === null && (
             <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-zinc-900/80 px-2 py-1 text-xs text-white">Finding text…</div>
+          )}
+          {sidewaysTurn !== null && (
+            <div className="absolute inset-x-0 top-3 z-10 mx-auto flex w-fit max-w-[90%] flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg bg-zinc-900/90 px-3 py-2 text-center text-[13px] text-white">
+              <span>{sidewaysTurn === 180 ? "The text on this page is upside down." : "The text on this page runs sideways."} Turn the page to edit it.</span>
+              <button type="button" className="rounded-md bg-white px-2.5 py-1 text-[13px] font-semibold text-ink" onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => apply({ op: "page.rotate", page: entry.ref, degrees: sidewaysTurn })}>Turn page upright</button>
+            </div>
           )}
           {blocks !== null && blocks.length === 0 && (
             <div className="absolute inset-x-0 top-3 z-10 mx-auto flex w-fit max-w-[90%] flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg bg-zinc-900/90 px-3 py-2 text-center text-[13px] text-white">

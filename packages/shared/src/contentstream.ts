@@ -295,7 +295,12 @@ export function listGlyphs(ops: Op[], fonts: FontResolver): Glyph[] {
 const inside = (x: number, y: number, r: Box, tol: number) =>
   x >= r.x - tol && x <= r.x + r.w + tol && y >= r.y - tol && y <= r.y + r.h + tol;
 
-export interface RemovalGroup { id: string; rects: Box[] }
+export interface RemovalGroup {
+  id: string;
+  rects: Box[];
+  /** Only glyphs drawn with these font resource names (default: any font). */
+  fonts?: ReadonlySet<string>;
+}
 
 /**
  * Remove glyphs whose centres fall inside any group's rects. Returns the new
@@ -313,7 +318,10 @@ export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: Remov
   interpret(ops, fonts, (opIndex, glyphs, ts, metrics) => {
     if (!metrics || metrics.vertical || glyphs.length === 0 || ts.size === 0) return;
     const hit = glyphs.map((g) => {
-      for (const grp of groups) for (const r of grp.rects) if (inside(g.cx, g.cy, r, tol)) return grp.id;
+      for (const grp of groups) {
+        if (grp.fonts && !grp.fonts.has(ts.font ?? "")) continue;
+        for (const r of grp.rects) if (inside(g.cx, g.cy, r, tol)) return grp.id;
+      }
       return null;
     });
     if (hit.every((h) => h === null)) return;
