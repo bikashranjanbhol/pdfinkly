@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { batesNumber, parsePageRange, type Bates, type DocModel, type HeaderFooter, type PageEntry, type Stamps, type Watermark } from "@pdfinkly/shared";
 import { IconX } from "../icons";
+import Link from "next/link";
+import { isLocked, usePlan } from "@/lib/client/plan";
+import { ProBadge } from "../billing/ProBadge";
 import { PageView } from "./PageView";
 import { useEditor } from "./store";
 import { toPngOrJpegDataUrl } from "./Toolbar";
@@ -63,6 +66,7 @@ function PagesField({ name, total, p, hint }: { name: string; total: number; p: 
 /** Watermark, page numbers and headers/footers for the whole document, with a live preview. */
 export function StampsDialog({ model, fileName, onClose, initialTab = "watermark" }: { model: DocModel; fileName: string; onClose: () => void; initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
+  const batesLocked = isLocked(usePlan(), "bates");
   const total = model.pages.length;
   const dialog = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -132,8 +136,9 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
     setW({ image: await toPngOrJpegDataUrl(file), size: wm.image ? wm.size : 40 });
   }
 
+  const locked = tab === "bates" && batesLocked;
   function apply() {
-    if (active.pages.error || active.empty) return;
+    if (active.pages.error || active.empty || locked) return;
     useEditor.getState().apply({ op: "stamp.set", key: tab, stamp: active.draft });
     onClose();
   }
@@ -153,6 +158,7 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
             <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
               className={`-mb-px border-b-2 px-3 py-2.5 text-sm font-semibold ${tab === id ? "border-brand-600 text-brand-700" : "border-transparent text-zinc-600 hover:text-ink"}`}>
               {label}{model.stamps[id] ? " •" : ""}
+              {id === "bates" && batesLocked && <ProBadge className="ml-1.5 align-middle" />}
             </button>
           ))}
         </div>
@@ -218,6 +224,12 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
           ) : tab === "bates" ? (
             <div role="tabpanel" aria-label="Bates numbering" className="flex flex-col gap-4">
               <p className="text-[13px] text-zinc-600">A unique, running number on every page, used to reference pages in legal and audit documents.</p>
+              {batesLocked && (
+                <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  Bates numbering is part of Pro. You can try the settings and preview here.{" "}
+                  <Link href="/pricing" target="_blank" className="font-semibold text-brand-700">See Pro plans</Link>
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
                   Prefix
@@ -345,7 +357,7 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
           </div>
           <div className="flex gap-2">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn-primary" disabled={!!active.pages.error || active.empty} onClick={apply}>
+            <button type="button" className="btn-primary" disabled={!!active.pages.error || active.empty || locked} onClick={apply}>
               {tab === "watermark" ? (active.existing ? "Update watermark" : "Add watermark") : tab === "bates" ? (active.existing ? "Update numbers" : "Add Bates numbers") : (active.existing ? "Update" : "Add to pages")}
             </button>
           </div>

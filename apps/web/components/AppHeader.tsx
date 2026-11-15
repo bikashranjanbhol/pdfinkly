@@ -31,6 +31,9 @@ export async function AppHeader({ active }: { active?: "files" | "upload" | "acc
               {actor.isGuest ? "Guest" : `${actor.plan.name} plan`}
             </span>
           )}
+          {actor && actor.plan.id === "free" && (
+            <Link href="/pricing" className="text-sm font-semibold text-brand-700">Upgrade</Link>
+          )}
           {!actor || actor.isGuest ? (
             <Link href="/signin" className="btn-secondary min-h-10 px-3.5 text-sm">Sign in</Link>
           ) : (

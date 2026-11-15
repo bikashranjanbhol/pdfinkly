@@ -1,6 +1,7 @@
 """Browser test of password protection and unlocking.
 Usage: python3 scripts/ui_security.py   (app running on BASE_URL, default http://localhost:3000)"""
 import io, os, sys, tempfile
+from testutil import make_pro
 from playwright.sync_api import sync_playwright, expect
 from pypdf import PdfReader, PdfWriter
 from pypdf.constants import UserAccessPermissions as P
@@ -27,6 +28,8 @@ def main():
         # --- Protect: open password + no printing/copying
         upload(page, os.path.join(FIX, "chrome-cid.pdf"))
         page.wait_for_url("**/edit/**", timeout=20000)
+        make_pro(ctx)  # password protection is a Pro tool
+        page.reload()
         page.get_by_role("button", name="Download", exact=True).click()
         page.get_by_role("menuitem", name="Download with password…").click()
         dlg = page.get_by_role("dialog", name="Download with password")

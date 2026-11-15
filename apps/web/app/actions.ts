@@ -2,8 +2,11 @@
 
 import { signIn, signOut } from "@/lib/server/auth";
 
-export async function signInWith(provider: "google" | "github") {
-  await signIn(provider, { redirectTo: "/files" });
+/** Only same-site paths, so the redirect can't be pointed elsewhere. */
+const safeNext = (next?: string) => (next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/files");
+
+export async function signInWith(provider: "google" | "github", next?: string) {
+  await signIn(provider, { redirectTo: safeNext(next) });
 }
 
 export async function signOutAction() {

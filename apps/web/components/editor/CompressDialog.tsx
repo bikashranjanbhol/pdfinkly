@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { formatBytes } from "@/lib/client/api";
 import { compressPdf, type CompressMode } from "@/lib/client/compress";
 import { IconX } from "../icons";
+import { QuotaNotice } from "../billing/QuotaNotice";
+import { countJob, QuotaExceeded, refreshPlan, usePlan } from "@/lib/client/plan";
 
 type Choice = "recommended" | "strong" | "light" | "target";
 const TARGETS = [100, 200, 500, 1024];
@@ -22,6 +24,10 @@ export function CompressDialog({ fileName, getBytes, onDownload, onSave, onClose
   const [progress, setProgress] = useState<{ f: number; note: string } | null>(null);
   const [result, setResult] = useState<{ bytes: Uint8Array; reached: boolean; images: number; mode: CompressMode } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const plan = usePlan();
+  const [blocked, setBlocked] = useState<string | null>(null);
+  useEffect(() => refreshPlan(), []); // show the allowance as it is now
+  const counted = useRef(false);
   const [saving, setSaving] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
 
@@ -44,10 +50,16 @@ export function CompressDialog({ fileName, getBytes, onDownload, onSave, onClose
     const mode: CompressMode = choice === "target" ? { targetBytes: targetKb * 1024 } : { preset: choice };
     setProgress({ f: 0, note: "Starting…" });
     try {
+      // One count per dialog, however many settings are tried.
+      if (!counted.current) {
+        await countJob("compress");
+        counted.current = true;
+      }
       const r = await compressPdf(source, mode, (f, note) => setProgress({ f, note }));
       setResult({ ...r, mode });
     } catch (e) {
-      setError(e instanceof Error ? `Compression failed: ${e.message}` : "Compression failed.");
+      if (e instanceof QuotaExceeded) setBlocked(e.message);
+      else setError(e instanceof Error ? `Compression failed: ${e.message}` : "Compression failed.");
     } finally {
       setProgress(null);
     }
@@ -112,6 +124,7 @@ export function CompressDialog({ fileName, getBytes, onDownload, onSave, onClose
             </div>
           )}
           {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
+          {!result && <QuotaNotice plan={plan} blocked={blocked} />}
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-zinc-200 px-6 py-4">
@@ -125,7 +138,7 @@ export function CompressDialog({ fileName, getBytes, onDownload, onSave, onClose
           ) : (
             <>
               <button type="button" className="btn-secondary" onClick={onClose} disabled={!!progress}>Cancel</button>
-              <button type="button" className="btn-primary" disabled={!source || !!progress} onClick={() => void run()}>{progress ? "Compressing…" : "Compress"}</button>
+              <button type="button" className="btn-primary" disabled={!source || !!progress || !!blocked} onClick={() => void run()}>{progress ? "Compressing…" : "Compress"}</button>
             </>
           )}
         </div>

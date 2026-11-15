@@ -5,6 +5,8 @@ import { saveBytes } from "@/lib/client/api";
 import { convertPdf, countScannedPages, FORMAT_INFO, type ConvertFormat } from "@/lib/client/convert";
 import { OCR_LANGS, type OcrLang } from "@/lib/client/ocr";
 import { IconX } from "../icons";
+import { QuotaNotice } from "../billing/QuotaNotice";
+import { countJob, QuotaExceeded, refreshPlan, usePlan } from "@/lib/client/plan";
 
 const CHOICES: Array<{ id: "docx" | "xlsx" | "pptx" | "img"; title: string; note: string }> = [
   { id: "docx", title: "Word", note: "Editable text with its fonts, plus the pictures" },
@@ -26,6 +28,9 @@ export function ConvertDialog({ fileName, getBytes, onClose }: { fileName: strin
   });
   const [progress, setProgress] = useState<{ f: number; note: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const plan = usePlan();
+  const [blocked, setBlocked] = useState<string | null>(null);
+  useEffect(() => refreshPlan(), []); // show the allowance as it is now
   const [done, setDone] = useState<string | null>(null);
   const dialog = useRef<HTMLDivElement>(null);
 
@@ -52,12 +57,14 @@ export function ConvertDialog({ fileName, getBytes, onClose }: { fileName: strin
     setDone(null);
     setProgress({ f: 0, note: "Starting…" });
     try {
+      await countJob("convert");
       if (usesOcr && ocr) try { localStorage.setItem("pdfinkly.ocrLangs", JSON.stringify(langs)); } catch { /* private mode */ }
       const out = await convertPdf(source, format, { fileName, dpi, ocrLangs: usesOcr && ocr ? langs : null }, (f, note) => setProgress({ f, note }));
       saveBytes(out.data, out.name, out.mime);
       setDone(`Downloaded ${out.name}.${out.recognised ? ` Text on ${out.recognised} scanned page${out.recognised > 1 ? "s was" : " was"} recognised first.` : ""}`);
     } catch (e) {
-      setError(e instanceof Error ? `Conversion failed: ${e.message}` : "Conversion failed.");
+      if (e instanceof QuotaExceeded) setBlocked(e.message);
+      else setError(e instanceof Error ? `Conversion failed: ${e.message}` : "Conversion failed.");
     } finally {
       setProgress(null);
     }
@@ -141,11 +148,12 @@ export function ConvertDialog({ fileName, getBytes, onClose }: { fileName: strin
           )}
           {done && <p role="status" className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-900">{done}</p>}
           {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
+          <QuotaNotice plan={plan} blocked={blocked} />
         </div>
 
         <div className="flex justify-end gap-2 border-t border-zinc-200 px-6 py-4">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={!!progress}>{done ? "Close" : "Cancel"}</button>
-          <button type="button" className="btn-primary" disabled={!source || scanned === null || !!progress || (usesOcr && ocr && !langs.length)} onClick={() => void run()}>
+          <button type="button" className="btn-primary" disabled={!source || scanned === null || !!progress || !!blocked || (usesOcr && ocr && !langs.length)} onClick={() => void run()}>
             {progress ? "Converting…" : `Convert to ${FORMAT_INFO[format].label}`}
           </button>
         </div>

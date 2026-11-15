@@ -1,6 +1,7 @@
 """Browser test of redaction: find personal data → mark → save → the saved file no longer contains it.
 Usage: python3 scripts/ui_redact.py   (app running on BASE_URL, default http://localhost:3000)"""
 import base64, io, os, sys, time
+from testutil import make_pro
 from playwright.sync_api import sync_playwright, expect
 import pypdf
 from PIL import Image, ImageChops
@@ -24,10 +25,15 @@ def saved(page):
 def text_of(reader):
     return " ".join(reader.pages[0].extract_text().split())
 
+_pro = set()
 def upload(page, name):
     page.goto(BASE + "/upload")
     page.set_input_files("#file-input", os.path.join(FIX, name))
     page.wait_for_url("**/edit/**", timeout=20000)
+    if id(page.context) not in _pro:  # redaction is a Pro tool
+        make_pro(page.context)
+        _pro.add(id(page.context))
+        page.reload()
 
 def find_and_mark(page, query=None):
     page.get_by_role("toolbar", name="Editing tools").get_by_role("button", name="Redact").click()

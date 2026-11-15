@@ -22,7 +22,7 @@ const citext = customType<{ data: string }>({ dataType: () => "citext" });
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
 export const paymentProvider = pgEnum("payment_provider", ["stripe", "razorpay"]);
-export const subscriptionStatus = pgEnum("subscription_status", ["trialing", "active", "past_due", "cancelled", "expired"]);
+export const subscriptionStatus = pgEnum("subscription_status", ["trialing", "active", "past_due", "cancelled", "expired", "incomplete"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "succeeded", "failed", "refunded"]);
 export const fileStatus = pgEnum("file_status", ["uploading", "ready", "processing", "failed"]);
 export const versionSource = pgEnum("version_source", ["upload", "edit", "job"]);
@@ -45,6 +45,18 @@ export const plans = pgTable("plans", {
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
+export const prices = pgTable("prices", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => plans.id),
+  kind: text("kind").$type<"recurring" | "pass">().notNull(),
+  period: text("period").$type<"day" | "month" | "year">().notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+  currency: text("currency").notNull(),
+  razorpayPlanIds: jsonb("razorpay_plan_ids").$type<Partial<Record<"test" | "live", string>>>().notNull().default({}),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: citext("email").unique(),
@@ -53,6 +65,8 @@ export const users = pgTable("users", {
   emailVerified: ts("email_verified"),
   isGuest: boolean("is_guest").notNull().default(false),
   planId: text("plan_id").notNull().default("free").references(() => plans.id),
+  /** When a paid plan runs out; NULL on Free. */
+  planExpiresAt: ts("plan_expires_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
   updatedAt: ts("updated_at").notNull().defaultNow(),
   deletedAt: ts("deleted_at"),
@@ -141,12 +155,55 @@ export const shareLinks = pgTable("share_links", {
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  planId: text("plan_id").notNull().references(() => plans.id),
+  provider: paymentProvider("provider").notNull(),
+  providerSubscriptionId: text("provider_subscription_id").notNull(),
+  providerCustomerId: text("provider_customer_id"),
+  status: subscriptionStatus("status").notNull(),
+  currentPeriodStart: ts("current_period_start"),
+  currentPeriodEnd: ts("current_period_end"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+  kind: text("kind").$type<"recurring" | "pass">().notNull().default("recurring"),
+  priceId: text("price_id").references(() => prices.id),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  subscriptionId: uuid("subscription_id").references(() => subscriptions.id, { onDelete: "set null" }),
+  provider: paymentProvider("provider").notNull(),
+  providerPaymentId: text("provider_payment_id").notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+  currency: text("currency").notNull(),
+  status: paymentStatus("status").notNull(),
+  paidAt: ts("paid_at"),
+  priceId: text("price_id").references(() => prices.id),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const webhookEvents = pgTable("webhook_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: paymentProvider("provider").notNull(),
+  eventId: text("event_id").notNull(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  receivedAt: ts("received_at").notNull().defaultNow(),
+  processedAt: ts("processed_at"),
+  error: text("error"),
+});
+
 export const usageEvents = pgTable("usage_events", {
   id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   kind: usageKind("kind").notNull(),
   quantity: bigint("quantity", { mode: "number" }).notNull().default(1),
   jobId: uuid("job_id"),
+  tool: text("tool"),
   occurredAt: ts("occurred_at").notNull().defaultNow(),
 });
 
@@ -154,3 +211,5 @@ export type User = typeof users.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type FileVersionRow = typeof fileVersions.$inferSelect;
 export type Plan = typeof plans.$inferSelect;
+export type Price = typeof prices.$inferSelect;
+export type Subscription = typeof subscriptions.$inferSelect;

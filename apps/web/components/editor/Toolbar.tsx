@@ -1,5 +1,7 @@
 "use client";
 
+import { isLocked, usePlan, type ProFeature } from "@/lib/client/plan";
+import { ProBadge } from "../billing/ProBadge";
 import { useRef } from "react";
 import {
   IconArrow, IconEllipse, IconEraser, IconHighlight, IconImage, IconNote, IconPen, IconRect, IconRedo,
@@ -25,7 +27,9 @@ const TOOLS: { id: Tool; label: string; Icon: (p: { size?: number }) => React.JS
 
 export const toolHint = (t: Tool) => TOOLS.find((x) => x.id === t)?.hint ?? "";
 
-export function Toolbar({ onNeedSignature, onOpenStamps, stampCount = 0, pageLabel }: { onNeedSignature: () => void; onOpenStamps?: () => void; stampCount?: number; pageLabel: string }) {
+export function Toolbar({ onNeedSignature, onOpenStamps, onLocked, stampCount = 0, pageLabel }: { onNeedSignature: () => void; onOpenStamps?: () => void; onLocked?: (f: ProFeature) => void; stampCount?: number; pageLabel: string }) {
+  const plan = usePlan();
+  const redactLocked = isLocked(plan, "redact");
   const tool = useEditor((s) => s.tool);
   const mode = useEditor((s) => s.mode);
   const zoom = useEditor((s) => s.zoom);
@@ -41,6 +45,10 @@ export function Toolbar({ onNeedSignature, onOpenStamps, stampCount = 0, pageLab
     }
     if (t === "signature") {
       onNeedSignature();
+      return;
+    }
+    if (t === "redact" && redactLocked) {
+      onLocked?.("redact");
       return;
     }
     setTool(t);
@@ -69,10 +77,11 @@ export function Toolbar({ onNeedSignature, onOpenStamps, stampCount = 0, pageLab
             type="button"
             onClick={() => pick(id)}
             aria-pressed={tool === id}
-            className={`flex h-[52px] min-w-14 flex-col items-center justify-center gap-0.5 rounded-[10px] px-1.5 ${tool === id ? "bg-brand-50 text-brand-700" : "text-zinc-700 hover:bg-zinc-100"}`}
+            className={`relative flex h-[52px] min-w-14 flex-col items-center justify-center gap-0.5 rounded-[10px] px-1.5 ${tool === id ? "bg-brand-50 text-brand-700" : "text-zinc-700 hover:bg-zinc-100"}`}
           >
             <Icon size={20} />
             <span className="text-[11px] font-semibold">{label}</span>
+            {id === "redact" && redactLocked && <ProBadge />}
           </button>
         ))}
       </div>

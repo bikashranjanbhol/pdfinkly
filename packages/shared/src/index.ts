@@ -47,6 +47,10 @@ export type ErrorCode =
   | "SIZE_MISMATCH"
   | "INVALID_PDF"
   | "RATE_LIMITED"
+  | "QUOTA_EXCEEDED"
+  | "ALREADY_SUBSCRIBED"
+  | "PAYMENT_INVALID"
+  | "PAYMENTS_UNAVAILABLE"
   | "INTERNAL";
 
 export interface ApiError {

@@ -235,6 +235,7 @@ python3 scripts/ui_compress.py                                                  
 python3 scripts/ui_security.py                                                           # Protect with password, unlock on upload
 python3 scripts/ui_stamps.py                                                             # Page stamps: dialog, preview, saved file
 python3 scripts/ui_redact.py                                                             # Redaction: find, mark, save, check file + pixels
+node scripts/mock-razorpay.mjs & python3 scripts/ui_billing.py                           # Billing against a mock Razorpay (see Billing)
 ```
 
 The UI test uploads a PDF, adds a highlight, text, a drawing and a signature, checks autosave, undo/redo and
@@ -266,10 +267,52 @@ reload, rotates and deletes pages, saves a version, and then opens the saved PDF
 
 ## Limits and plans
 
-Plan limits live in the `plans` table, so they can change without a deploy. The seeded `free` plan allows
-25 MB files and keeps guest files for 24 hours. Pro and Business are listed as "Coming soon" until billing ships.
+Plan limits live in the `plans` table, so they can change without a deploy:
+
+| | Free | Pro |
+|---|---|---|
+| File size | 25 MB | 200 MB |
+| Files kept | 24 hours | until deleted |
+| Conversions + compressions | 10 a month (`monthly_jobs`) | unlimited |
+| Redaction, password protection, Bates numbering (`features`) | – | ✓ |
+
+Editing, signing, organizing, OCR, watermarks and page numbers are free. The tools run in the browser, so the
+monthly count and the Pro-only tools are checked by the app (`POST /api/usage`, `plans.features`), not by the server
+doing the work.
+
+## Billing (Razorpay)
+
+Prices are rows in `prices`: Pro ₹199/month or ₹1,499/year (US$7 / US$59 outside India), and a ₹49 (US$2) day pass.
+Visitors from India see rupees (Vercel's `x-vercel-ip-country`); `/pricing?currency=USD` switches.
+
+- **Subscriptions** (Pro monthly/yearly) are Razorpay Subscriptions, so customers can pay by UPI AutoPay or a card
+  mandate. The Razorpay plan behind each price is created on the first checkout and its id kept in
+  `prices.razorpay_plan_ids` (separately for test and live keys).
+- **Day passes** are one-off Razorpay Orders; each adds 24 hours, after any pass still running.
+- Pro is switched on when the browser reports Checkout's result **and** its signature checks out
+  (`/api/billing/verify`), and kept in step by **webhooks** (`/api/billing/webhook`): renewals, failed charges,
+  cancellations, refunds, and passes paid with the tab closed. Webhooks are verified and idempotent (`webhook_events`).
+- `users.plan_expires_at` is the end of the paid time (renewals get 3 days' grace while Razorpay retries). Once it
+  passes, the account reads as Free immediately; no background job is needed.
+- Cancelling (Account page) stops renewal at the end of the period already paid for.
+- Buying needs an account (Google sign-in), so the purchase stays with the person.
+
+### Setting it up
+
+1. Razorpay Dashboard → **Account & Settings → API Keys** (start in Test mode): set `RAZORPAY_KEY_ID` and
+   `RAZORPAY_KEY_SECRET` in Vercel. Subscriptions must be enabled on the account (Razorpay: Subscriptions).
+2. **Webhooks → Add new webhook**: URL `<APP_URL>/api/billing/webhook`, a secret of your choice (set the same value as
+   `RAZORPAY_WEBHOOK_SECRET`), events `subscription.*`, `payment.captured`, `payment.failed`, `refund.processed`.
+3. For US$ prices, enable international payments on the Razorpay account.
+4. Going live: switch to live keys; the live plans are created on the first live checkout.
+
+Until the keys are set, the pricing page shows "Payments open soon".
+
+For tests, `scripts/mock-razorpay.mjs` stands in for the API and Checkout: start the app with
+`RAZORPAY_KEY_ID=rzp_test_mock RAZORPAY_KEY_SECRET=mocksecret RAZORPAY_WEBHOOK_SECRET=whsecret
+RAZORPAY_API_BASE=http://127.0.0.1:4010/v1` and run `python3 scripts/ui_billing.py`.
 
 ## Next phases
 
 - **Phase 2**: worker service (compress, Office ↔ PDF, server-side OCR for very large files) with a job queue, as described in the LLD.
-- **Phase 3**: billing, team workspaces.
+- **Phase 3**: team workspaces and the Business plan.

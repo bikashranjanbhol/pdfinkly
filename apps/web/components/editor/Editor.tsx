@@ -31,6 +31,9 @@ import { StampsDialog } from "./StampsDialog";
 import { ProtectDialog } from "./ProtectDialog";
 import { CompressDialog } from "./CompressDialog";
 import { ConvertDialog } from "./ConvertDialog";
+import { UpgradeDialog } from "../billing/UpgradeDialog";
+import { ProBadge } from "../billing/ProBadge";
+import { FEATURE_LABEL, isLocked, usePlan, type ProFeature } from "@/lib/client/plan";
 import type { Protection } from "@/lib/client/qpdf";
 import { ShareDialog } from "./ShareDialog";
 import { SignatureDialog } from "./SignatureDialog";
@@ -76,6 +79,9 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   const [scanHint, setScanHint] = useState(false);
   const ocrRequest = useEditor((s) => s.ocrRequest);
   useEffect(() => { if (ocrRequest) setDialog("ocr"); }, [ocrRequest]);
+  const plan = usePlan();
+  const [upgrade, setUpgrade] = useState<ProFeature | null>(null);
+  const protectLocked = isLocked(plan, "protect");
   const [renaming, setRenaming] = useState(false);
   const savingVersion = useRef(false);
   const mergeInput = useRef<HTMLInputElement>(null);
@@ -482,8 +488,10 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
                       onKeyDown={(e) => e.key === "Escape" && setDownloadMenu(false)}>
                       <button type="button" role="menuitem" autoFocus className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
                         onClick={() => { setDownloadMenu(false); void download(); }}>Download PDF</button>
-                      <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
-                        onClick={() => { setDownloadMenu(false); setDialog("protect"); }}>Download with password…</button>
+                      <button type="button" role="menuitem" className="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
+                        onClick={() => { setDownloadMenu(false); if (protectLocked) setUpgrade("protect"); else setDialog("protect"); }}>
+                        Download with password…{protectLocked && <ProBadge className="" />}
+                      </button>
                       <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
                         onClick={() => { setDownloadMenu(false); setDialog("compress"); }}>Compress…</button>
                       <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
@@ -523,7 +531,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
         {busy === "save" && savingOcr.current && <div role="status" className="bg-brand-600 px-4 py-1 text-center text-xs text-white">Adding the recognised text and saving a new version…</div>}
         {busy === "export" && <div role="status" className="bg-brand-600 px-4 py-1 text-center text-xs text-white">Preparing your PDF…</div>}
 
-        {mode !== "organize" && <Toolbar onNeedSignature={() => setDialog("signature")} onOpenStamps={() => setDialog("stamps")} stampCount={Object.keys(model.stamps).length} pageLabel={`${model.pages.length} page${model.pages.length > 1 ? "s" : ""}`} />}
+        {mode !== "organize" && <Toolbar onNeedSignature={() => setDialog("signature")} onLocked={setUpgrade} onOpenStamps={() => setDialog("stamps")} stampCount={Object.keys(model.stamps).length} pageLabel={`${model.pages.length} page${model.pages.length > 1 ? "s" : ""}`} />}
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {mode === "sign" && <SignPanel fields={doc.fields} model={model} onCreateSignature={() => setDialog("signature")} />}
@@ -555,6 +563,15 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
         <input ref={mergeInput} type="file" accept="application/pdf,.pdf" className="sr-only" tabIndex={-1} aria-hidden="true"
           onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void addFromPdf(f); }} />
 
+        {upgrade && (
+          <UpgradeDialog
+            title={`${FEATURE_LABEL[upgrade]} is part of Pro`}
+            message={upgrade === "redact"
+              ? "Redaction permanently deletes text and images under each mark, and can find Aadhaar, PAN and bank details for you."
+              : "Download copies that need a password to open, with printing, copying and editing allowed or blocked."}
+            onClose={() => setUpgrade(null)}
+          />
+        )}
         {dialog === "ocr" && (
           <OcrDialog
             pages={ocrPages}

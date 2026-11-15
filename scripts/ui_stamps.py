@@ -1,6 +1,7 @@
 """Browser test of page stamps (watermark, …): dialog → preview → save → the file has them.
 Usage: python3 scripts/ui_stamps.py   (app running on BASE_URL, default http://localhost:3000)"""
 import base64, io, os, sys
+from testutil import make_pro
 from playwright.sync_api import sync_playwright, expect
 import pypdf
 
@@ -53,6 +54,8 @@ def main():
         page.goto(BASE + "/upload")
         page.set_input_files("#file-input", os.path.join(FIX, "chrome-cid.pdf"))
         page.wait_for_url("**/edit/**", timeout=20000)
+        make_pro(page.context)  # Bates numbering is a Pro tool
+        page.reload()
 
         # --- Watermark
         dlg = open_stamps(page)

@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { editDrafts, files, getDb, plans, shareLinks, users, type Plan, type User } from "@pdfinkly/db";
 import { env } from "./env";
 import { HttpError } from "./http";
+import { effectivePlanId } from "@/lib/billing/logic";
 
 /**
  * The "actor" is whoever is making the request: a signed-in user, or a guest
@@ -56,12 +57,12 @@ export async function getActor(): Promise<Actor | null> {
   const sessionUserId = session?.user?.id;
   if (sessionUserId) {
     const user = await loadUser(sessionUserId, false);
-    if (user) return { user, plan: await getPlan(user.planId), isGuest: false };
+    if (user) return { user, plan: await getPlan(effectivePlanId(user.planId, user.planExpiresAt)), isGuest: false };
   }
   const guestId = verifyGuest((await cookies()).get(GUEST_COOKIE)?.value);
   if (guestId) {
     const user = await loadUser(guestId, true);
-    if (user) return { user, plan: await getPlan(user.planId), isGuest: true };
+    if (user) return { user, plan: await getPlan(effectivePlanId(user.planId, user.planExpiresAt)), isGuest: true };
   }
   return null;
 }

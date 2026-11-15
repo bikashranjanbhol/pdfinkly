@@ -10,11 +10,12 @@ import { configuredProviders } from "@/lib/server/auth";
 export const metadata: Metadata = { title: "Sign in" };
 export const dynamic = "force-dynamic";
 
-export default async function SignIn({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+export default async function SignIn({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
   const actor = await getActor().catch(() => null);
-  if (actor && !actor.isGuest) redirect("/files");
+  const { error, next } = await searchParams;
+  const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : undefined;
+  if (actor && !actor.isGuest) redirect(dest ?? "/files");
   const providers = configuredProviders();
-  const { error } = await searchParams;
 
   return (
     <div className="flex min-h-screen flex-wrap bg-ground">
@@ -24,7 +25,11 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
           <div className="flex w-full max-w-[400px] flex-col gap-5">
             <div>
               <h1 className="font-display text-[34px] font-bold leading-tight tracking-tight">Sign in or create an account</h1>
-              <p className="mt-2 text-zinc-600">One step. We&apos;ll create your account if you don&apos;t have one.</p>
+              <p className="mt-2 text-zinc-600">
+                {dest?.startsWith("/pricing")
+                  ? "Pro is tied to your account, so sign in first. You'll go straight on to payment."
+                  : "One step. We'll create your account if you don't have one."}
+              </p>
             </div>
             {error && (
               <p role="alert" className="rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -33,7 +38,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
             )}
             {providers.length > 0 ? (
               providers.map((p) => (
-                <form key={p.id} action={signInWith.bind(null, p.id)}>
+                <form key={p.id} action={signInWith.bind(null, p.id, dest)}>
                   <button type="submit" className="btn-secondary h-12 w-full">Continue with {p.name}</button>
                 </form>
               ))
