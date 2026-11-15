@@ -11,9 +11,9 @@ import {
 let seed = 7;
 const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
-type Surface = "wood" | "dark" | "beige" | "cloth";
+type Surface = "wood" | "dark" | "beige" | "cloth" | "stripes";
 const SURFACE: Record<Surface, [number, number, number]> = {
-  wood: [150, 105, 65], dark: [45, 45, 50], beige: [205, 190, 160], cloth: [60, 90, 150],
+  wood: [150, 105, 65], dark: [45, 45, 50], beige: [205, 190, 160], cloth: [60, 90, 150], stripes: [190, 160, 200],
 };
 
 /** Page content at (u, v) in 0..1: text lines, a heading, a dark picture box. */
@@ -41,7 +41,7 @@ function photo({ w = 900, h = 1200, surface = "wood", quad, shadow = false, cast
     for (let x = 0; x < w; x++) {
       const soft = (t: number) => Math.min(1, Math.max(0, t / (w * 0.08) + 0.5));
       const light = 0.85 + 0.25 * (x / w) * (1 - 0.4 * (y / h)) - (shadow ? 0.35 * soft(w * 0.55 - x) * soft(y - h * 0.35) : 0);
-      const grain = surface === "wood" ? 18 * Math.sin(y * 0.09 + Math.sin(x * 0.02) * 3) : 0;
+      const grain = surface === "wood" ? 18 * Math.sin(y * 0.09 + Math.sin(x * 0.02) * 3) : surface === "stripes" ? (Math.floor((x + y) / 36) % 2) * -40 : 0;
       const n = (rand() - 0.5) * 16;
       let r = sr + grain + n, g = sg + grain * 0.7 + n, b = sb + grain * 0.4 + n;
       const p = applyH(toPage, { x: x + 0.5, y: y + 0.5 });
@@ -126,6 +126,7 @@ describe("detectDocument", () => {
     ["tilted on a beige table", { surface: "beige", quad: Q([[260, 90], [830, 300], [660, 1150], [60, 930]]) }],
     ["on blue cloth with a shadow", { surface: "cloth", shadow: true, quad: Q([[90, 100], [820, 80], [860, 1150], [40, 1120]]) }],
     ["under yellow light, with a picture on it", { surface: "wood", cast: [1, 0.93, 0.75], picture: true, quad: Q([[150, 200], [720, 160], [800, 1000], [100, 1060]]) }],
+    ["on a striped bedsheet, with a shadow", { surface: "stripes", shadow: true, quad: Q([[230, 80], [840, 240], [690, 1140], [70, 960]]) }],
     ["landscape photo", { w: 1200, h: 900, surface: "dark", quad: Q([[300, 60], [930, 110], [900, 860], [270, 840]]) }],
   ];
   for (const [name, opts] of cases) {

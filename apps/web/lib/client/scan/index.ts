@@ -7,7 +7,7 @@ export type { Analysis, Rendered };
 
 export type ScanRequest =
   | { id: number; op: "analyse"; blob: Blob }
-  | { id: number; op: "render"; blob: Blob; quad: Quad; filter: ScanFilter; turns: number; photo: { width: number; height: number } };
+  | { id: number; op: "render"; blob: Blob; quad: Quad; filter: ScanFilter; turns: number; photo: { width: number; height: number }; thumbFilter?: ScanFilter };
 export type ScanResponse =
   | { id: number; ok: true; analysis: Analysis }
   | { id: number; ok: true; rendered: Rendered }
@@ -46,7 +46,7 @@ async function onPage(job: Job): Promise<ScanResponse> {
   const p = await import("./pipeline");
   try {
     if (job.op === "analyse") return { id: 0, ok: true, analysis: await p.analyse(job.blob) };
-    return { id: 0, ok: true, rendered: await p.render(job.blob, job.quad, job.filter, job.turns, job.photo) };
+    return { id: 0, ok: true, rendered: await p.render(job.blob, job.quad, job.filter, job.turns, job.photo, job.thumbFilter) };
   } catch (e) {
     return { id: 0, ok: false, message: e instanceof Error ? e.message : String(e) };
   }
@@ -80,9 +80,11 @@ export function analysePhoto(blob: Blob): Promise<Analysis> {
   });
 }
 
-export function renderPage(blob: Blob, quad: Quad, filter: ScanFilter, turns: number, photo: { width: number; height: number }): Promise<Rendered> {
+export function renderPage(
+  blob: Blob, quad: Quad, filter: ScanFilter, turns: number, photo: { width: number; height: number }, thumbFilter?: ScanFilter,
+): Promise<Rendered> {
   return serial(async () => {
-    const r = await run({ op: "render", blob, quad, filter, turns, photo });
+    const r = await run({ op: "render", blob, quad, filter, turns, photo, thumbFilter });
     if (!r.ok) throw new Error(r.message);
     return (r as { rendered: Rendered }).rendered;
   });

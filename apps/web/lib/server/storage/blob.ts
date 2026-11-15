@@ -35,7 +35,7 @@ export function blobStorageDriver(): StorageDriver {
         access: "private",
         pathname: key,
         validUntil: expires,
-        allowedContentTypes: ["application/pdf"],
+        allowedContentTypes: [contentType],
         maximumSizeInBytes: sizeBytes,
         addRandomSuffix: false,
         // Keys are unique per version; overwrite only happens when a failed upload is retried.

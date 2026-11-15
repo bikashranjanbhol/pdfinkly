@@ -78,8 +78,15 @@ export interface Rendered {
 /** JPEG quality per look: black & white compresses well, colour needs a little more. */
 const QUALITY: Record<ScanFilter, number> = { auto: 0.8, gray: 0.78, bw: 0.72, original: 0.85 };
 
-/** Straighten and clean up one page. `quad` is in fractions of the upright photo. */
-export async function render(blob: Blob, quad: Quad, filter: ScanFilter, turns: number, photo: { width: number; height: number }): Promise<Rendered> {
+/**
+ * Straighten and clean up one page. `quad` is in fractions of the upright photo.
+ * `thumbFilter` gives the thumbnail a different look from the page itself (a
+ * phone sends straightened pages and the computer picks the look, but the
+ * phone still shows how they'll look).
+ */
+export async function render(
+  blob: Blob, quad: Quad, filter: ScanFilter, turns: number, photo: { width: number; height: number }, thumbFilter?: ScanFilter,
+): Promise<Rendered> {
   const W = photo.width, H = photo.height;
   const qNat = quad.map((p) => ({ x: p.x * W, y: p.y * H })) as Quad;
   const size = outputSize(qNat, undefined, photo);
@@ -90,6 +97,8 @@ export async function render(blob: Blob, quad: Quad, filter: ScanFilter, turns: 
   const q = insetQuad(quad.map((p) => ({ x: p.x * img.width, y: p.y * img.height })) as Quad);
   let page = applyFilter(warp(img, q, size.width, size.height), filter);
   page = rotateImg(page, turns);
-  const [jpeg, thumb] = [await encode(page, QUALITY[filter]), await encode(resize(page, 420), 0.75)];
+  const small = resize(page, 420);
+  const thumbImg = thumbFilter && thumbFilter !== filter ? applyFilter(small, thumbFilter) : small; // a new image; `page` is untouched
+  const [jpeg, thumb] = [await encode(page, QUALITY[filter]), await encode(thumbImg, 0.75)];
   return { jpeg, width: page.width, height: page.height, thumb };
 }

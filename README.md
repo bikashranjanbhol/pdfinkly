@@ -157,6 +157,12 @@ Phone photos of paper documents become clean, scanned-looking PDFs, entirely in 
   or the scan's own shape, optionally squeezed under a size limit (the Compress engine), then downloaded or saved
   to My files and opened in the editor (for OCR, signing, redaction…).
 - Photos are read upright from their EXIF orientation. Nothing is uploaded unless the user saves.
+- **Use your phone** (on a computer): a QR code holds a one-time link (`/scan/phone/<token>`; only its SHA-256 is
+  stored). The phone needs no account: it scans as above and sends the pages straightened but in their original
+  colours, so the computer applies the look. The link works for 15 minutes (extended while the phone is in use, to an
+  hour at most) and can only add JPEG pages to that one computer's session. The computer polls for pages, downloads
+  them and has them deleted from storage straight away; **Stop** closes the link; anything left is removed by the next
+  handoff or the daily cleanup (`scan_handoffs`, `scan_handoff_pages`).
 
 `scripts/make-scan-photos.py` makes realistic test photos (a rendered PDF page seen by a tilted pinhole camera on
 wood, granite, a bedsheet or a light desk, with uneven light, a soft shadow, noise and JPEG); a few are in
@@ -256,6 +262,7 @@ python3 scripts/ui_ocr.py                                                       
 python3 scripts/ui_images.py                                                             # Pictures → PDF: order, page size, EXIF rotation
 python3 scripts/ui_convert.py                                                            # Convert: Word, PowerPoint, images, Excel, scan → Word
 python3 scripts/ui_scan.py                                                               # Scan: photos → pages, looks, corners, PDF (desktop + phone)
+python3 scripts/ui_scan_phone.py                                                         # Use your phone: QR code, phone sends, computer receives
 python3 scripts/ui_compress.py                                                           # Compress: preset and a size limit
 python3 scripts/ui_security.py                                                           # Protect with password, unlock on upload
 python3 scripts/ui_stamps.py                                                             # Page stamps: dialog, preview, saved file

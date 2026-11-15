@@ -505,12 +505,14 @@ function houghLines(E: Edges, count: number): { th: number; rho: number }[] {
     }
   }
   const lines: { th: number; rho: number }[] = [];
-  for (let k = 0; k < count; k++) {
+  // At most a few lines per direction, so a striped or grained surface can't crowd out the page's edges.
+  const sameDir = (a: number, b: number) => { const d = Math.abs(a - b) % NT; return Math.min(d, NT - d) <= 12; };
+  for (let guard = 0; lines.length < count && guard < count * 6; guard++) {
     let bi = 0;
     for (let i = 1; i < acc.length; i++) if (acc[i]! > acc[bi]!) bi = i;
     if (acc[bi]! < Math.min(w, h) * 0.15) break;
     const t = Math.floor(bi / NR), r = (bi % NR) - diag;
-    lines.push({ th: (t * Math.PI) / NT, rho: r });
+    if (lines.filter((l) => sameDir(Math.round((l.th * NT) / Math.PI), t)).length < 4) lines.push({ th: (t * Math.PI) / NT, rho: r });
     // Suppress this line's neighbourhood (angles wrap round at 180°, with rho changing sign).
     for (let dt = -8; dt <= 8; dt++) {
       let tt = t + dt, rr = r;
@@ -533,7 +535,7 @@ function meet(a: { th: number; rho: number }, b: { th: number; rho: number }): P
 
 /** Four-sided outlines made from the strongest straight edges. */
 function lineQuads(E: Edges): Quad[] {
-  const L = houghLines(E, 14);
+  const L = houghLines(E, 16);
   const out: Quad[] = [];
   const mx = E.w * 0.03, my = E.h * 0.03;
   const inside = (p: Pt) => p.x >= -mx && p.y >= -my && p.x <= E.w + mx && p.y <= E.h + my;

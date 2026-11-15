@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { and, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { fileVersions, files, getDb } from "@pdfinkly/db";
 import { storage } from "@/lib/server/storage";
+import { removeStaleHandoffs } from "@/lib/server/handoff";
 
 /**
  * Deletes expired files and files soft-deleted more than a day ago: storage
@@ -51,5 +52,8 @@ export async function GET(req: Request) {
     removedObjects += keys.length;
   }
 
-  return Response.json({ removedFiles, removedObjects });
+  // Phone-scan links past their hour, and any pages the computer never picked up.
+  const removedHandoffs = await removeStaleHandoffs();
+
+  return Response.json({ removedFiles, removedObjects, removedHandoffs });
 }

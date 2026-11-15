@@ -19,6 +19,7 @@ export function CornerEditor({
   detected,
   found,
   filter: initialFilter,
+  showLook = true,
   onApply,
   onClose,
 }: {
@@ -29,6 +30,7 @@ export function CornerEditor({
   found: boolean;
   /** This page's own look, or null to follow the one chosen for all pages. */
   filter: ScanFilter | null;
+  showLook?: boolean;
   onApply: (quad: Quad, filter: ScanFilter | null) => void;
   onClose: () => void;
 }) {
@@ -144,7 +146,7 @@ export function CornerEditor({
           <button type="button" className="rounded-lg border border-white/20 px-3 py-2 text-sm hover:bg-white/10" onClick={() => setQuad(FULL)}>
             Whole photo
           </button>
-          <label className="ml-auto flex items-center gap-2 text-sm">
+          {showLook && <label className="ml-auto flex items-center gap-2 text-sm">
             Look
             <select
               className="rounded-lg border border-white/20 bg-zinc-800 px-2 py-2 text-sm"
@@ -154,7 +156,7 @@ export function CornerEditor({
               <option value="">Same as all pages</option>
               {FILTERS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
             </select>
-          </label>
+          </label>}
         </div>
         {!sane && <p role="alert" className="text-sm text-red-300">The corners cross over or are too squashed. Move them onto the page&apos;s four corners.</p>}
         <div className="flex justify-end gap-2">

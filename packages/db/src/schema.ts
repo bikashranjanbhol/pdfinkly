@@ -213,3 +213,25 @@ export type FileVersionRow = typeof fileVersions.$inferSelect;
 export type Plan = typeof plans.$inferSelect;
 export type Price = typeof prices.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
+
+export const scanHandoffs = pgTable("scan_handoffs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  expiresAt: ts("expires_at").notNull(),
+  phoneSeenAt: ts("phone_seen_at"),
+  closedAt: ts("closed_at"),
+});
+
+export const scanHandoffPages = pgTable("scan_handoff_pages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  handoffId: uuid("handoff_id").notNull().references(() => scanHandoffs.id, { onDelete: "cascade" }),
+  seq: integer("seq").notNull(),
+  storageKey: text("storage_key").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  ready: boolean("ready").notNull().default(false),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});

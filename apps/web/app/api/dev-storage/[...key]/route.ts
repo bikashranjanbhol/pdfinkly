@@ -44,7 +44,7 @@ export async function GET(req: Request, ctx: Ctx) {
     return deny(404, "Not found");
   }
   const headers: Record<string, string> = {
-    "Content-Type": "application/pdf",
+    "Content-Type": /\.jpe?g$/i.test(key) ? "image/jpeg" : "application/pdf",
     "Content-Length": String(size),
     "Cache-Control": "private, max-age=60",
   };

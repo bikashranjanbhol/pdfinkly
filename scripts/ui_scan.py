@@ -10,7 +10,7 @@ os.makedirs(OUT, exist_ok=True)
 photo = lambda n: os.path.join(PHOTOS, n)
 
 def wait_ready(page, count):
-    expect(page.get_by_role("list").first.get_by_role("listitem").filter(has=page.get_by_role("img"))).to_have_count(count, timeout=60000)
+    expect(page.get_by_role("region", name="Pages").get_by_role("listitem").filter(has=page.get_by_role("img"))).to_have_count(count, timeout=60000)
     expect(page.get_by_role("status").filter(has_text="Finding the page")).to_have_count(0, timeout=60000)
     expect(page.get_by_role("status").filter(has_text="Cleaning up")).to_have_count(0, timeout=60000)
 
@@ -40,7 +40,7 @@ def main():
 
         page.set_input_files("#scan-photos", [photo("desk-angle.jpg"), photo("light-desk.jpg"), photo("no-page.jpg")])
         wait_ready(page, 3)
-        pages = page.get_by_role("list").first
+        pages = page.get_by_role("region", name="Pages")
         # Pages found and straightened to A4 proportions; the empty photo is flagged.
         for n in (1, 2):
             r = thumb_ratio(page, n)
