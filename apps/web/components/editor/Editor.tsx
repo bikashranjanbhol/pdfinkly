@@ -29,6 +29,7 @@ import { DocsContext, PageCanvas, PageView, usePageInfo } from "./PageView";
 import { Properties } from "./Properties";
 import { StampsDialog } from "./StampsDialog";
 import { ProtectDialog } from "./ProtectDialog";
+import { CompressDialog } from "./CompressDialog";
 import type { Protection } from "@/lib/client/qpdf";
 import { ShareDialog } from "./ShareDialog";
 import { SignatureDialog } from "./SignatureDialog";
@@ -69,7 +70,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "export" | "save" | "merge">(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr" | "stamps" | "protect">(null);
+  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr" | "stamps" | "protect" | "compress">(null);
   const [downloadMenu, setDownloadMenu] = useState(false);
   const [scanHint, setScanHint] = useState(false);
   const ocrRequest = useEditor((s) => s.ocrRequest);
@@ -289,6 +290,23 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
     return bytes;
   }
 
+  const compressSource = useCallback(() => currentBytes(), [doc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Store finished bytes (e.g. compressed) as the next version, including any unsaved edits they contain. */
+  async function saveBytesAsVersion(bytes: Uint8Array, message: string) {
+    if (!doc || !model) return;
+    setBusy("save");
+    try {
+      const pages = (await (await import("@/lib/client/pdf")).countPages(bytes));
+      await uploadNewVersion(fileId, bytes, doc.baseVersionId, pages);
+      useEditor.getState().reset([], 0);
+      await load();
+      setNotice(message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** Download a password-protected copy (throws to the dialog on failure). */
   async function downloadProtected(p: Protection) {
     if (!doc) return;
@@ -465,6 +483,8 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
                         onClick={() => { setDownloadMenu(false); void download(); }}>Download PDF</button>
                       <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
                         onClick={() => { setDownloadMenu(false); setDialog("protect"); }}>Download with password…</button>
+                      <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
+                        onClick={() => { setDownloadMenu(false); setDialog("compress"); }}>Compress…</button>
                     </div>
                   </>
                 )}
@@ -550,6 +570,11 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
               }).finally(() => { savingOcr.current = false; });
             }}
           />
+        )}
+        {dialog === "compress" && (
+          <CompressDialog fileName={doc.file.name} getBytes={compressSource} onClose={() => setDialog(null)}
+            onDownload={(b) => saveBytes(b, doc.file.name.replace(/\.pdf$/i, "") + " (compressed).pdf")}
+            onSave={(b) => saveBytesAsVersion(b, "Saved the compressed PDF as a new version.")} />
         )}
         {dialog === "protect" && <ProtectDialog fileName={doc.file.name} onClose={() => setDialog(null)} onProtect={downloadProtected} />}
         {dialog === "stamps" && <StampsDialog model={model} fileName={doc.file.name} onClose={() => setDialog(null)} />}

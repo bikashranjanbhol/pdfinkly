@@ -70,7 +70,29 @@ const nums = (arr: PDFArray | undefined, n: number, fallback: number[]) => {
 
 const subtype = (s: PDFStream) => s.dict.lookupMaybe(PDFName.of("Subtype"), PDFName)?.decodeText();
 
-interface ImageHit { ref: PDFRef; obj: PDFStream; ctm: Matrix }
+export interface ImageHit { ref: PDFRef; obj: PDFStream; ctm: Matrix }
+
+const EVERYWHERE: Box[] = [{ x: -1e9, y: -1e9, w: 2e9, h: 2e9 }];
+
+/** Every image XObject a page draws (including inside forms), with the CTM it's drawn at. */
+export function imagesOnPage(doc: PDFDocument, page: PDFPage): ImageHit[] {
+  const hits: ImageHit[] = [];
+  walk(doc, pageContent(page), page.node.Resources(), EVERYWHERE, [...IDENTITY] as Matrix, 0, false, emptyStats(), hits);
+  return hits;
+}
+
+/** A PDF whose one page (width × height pt) shows just this image, opaque, for the browser to render. */
+export async function imageOnlyPdf(src: PDFDocument, obj: PDFStream, width: number, height: number): Promise<Uint8Array> {
+  const mini = await PDFDocument.create();
+  const copy = PDFObjectCopier.for(src.context, mini.context).copy(obj);
+  copy.dict.delete(PDFName.of("SMask"));
+  copy.dict.delete(PDFName.of("Mask"));
+  const ref = mini.context.register(copy);
+  const page = mini.addPage([width, height]);
+  page.node.setXObject(PDFName.of("Im0"), ref);
+  page.pushOperators(pushGraphicsState(), concatTransformationMatrix(width, 0, 0, height, 0, 0), drawObject("Im0"), popGraphicsState());
+  return mini.save();
+}
 
 /**
  * Walk a content stream and the forms it draws. With `write`, rewrite them
@@ -186,7 +208,7 @@ const invert = (m: Matrix): Matrix | null => {
   return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
 };
 
-function isGray(obj: PDFStream): boolean {
+export function isGray(obj: PDFStream): boolean {
   const bpc = obj.dict.lookupMaybe(PDFName.of("BitsPerComponent"), PDFNumber)?.asNumber() ?? 8;
   const cs = obj.dict.lookup(PDFName.of("ColorSpace"));
   if (cs instanceof PDFName) return cs.decodeText() === "DeviceGray" || cs.decodeText() === "CalGray";
@@ -202,7 +224,7 @@ function isGray(obj: PDFStream): boolean {
   return bpc === 1 && !cs; // JBIG2 often has DeviceGray; bare 1-bit images are bilevel
 }
 
-function filters(obj: PDFStream): string[] {
+export function filters(obj: PDFStream): string[] {
   const f = obj.dict.lookup(PDFName.of("Filter"));
   if (f instanceof PDFName) return [f.decodeText()];
   if (f instanceof PDFArray) return Array.from({ length: f.size() }, (_, i) => (f.lookup(i) as PDFName).decodeText());
@@ -269,17 +291,9 @@ export async function planRedactionImages({ base, ops, external = {} }: { base: 
   const out: RedactImageJob[] = [];
   for (const job of jobs.values()) {
     if (!job.boxes.length) continue;
-    const mini = await PDFDocument.create();
-    const copy = PDFObjectCopier.for(job.doc.context, mini.context).copy(job.obj);
     // Render the samples alone, opaque: the soft mask stays on the original object.
-    copy.dict.delete(PDFName.of("SMask"));
-    copy.dict.delete(PDFName.of("Mask"));
-    const ref = mini.context.register(copy);
-    const page = mini.addPage([job.width, job.height]);
-    page.node.setXObject(PDFName.of("Im0"), ref);
-    page.pushOperators(pushGraphicsState(), concatTransformationMatrix(job.width, 0, 0, job.height, 0, 0), drawObject("Im0"), popGraphicsState());
-    const { obj: _o, doc: _d, ...rest } = job;
-    out.push({ ...rest, pdf: await mini.save() });
+    const { obj, doc, ...rest } = job;
+    out.push({ ...rest, pdf: await imageOnlyPdf(doc, obj, job.width, job.height) });
   }
   return out;
 }

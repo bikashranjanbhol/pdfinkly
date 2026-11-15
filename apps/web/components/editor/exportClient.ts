@@ -7,7 +7,7 @@ import { fontLoader, type WorkerMessage, type WorkerReply } from "./exportShared
 type Input = Omit<ExportInput, "loadFont" | "onWarning">;
 
 /** Run one job in a fresh Web Worker; null when workers aren't available (or it crashed). */
-async function inWorker(msg: WorkerMessage): Promise<WorkerReply | null> {
+export async function inWorker(msg: WorkerMessage): Promise<WorkerReply | null> {
   let worker: Worker;
   try {
     worker = new Worker(new URL("./export.worker.ts", import.meta.url), { type: "module" });

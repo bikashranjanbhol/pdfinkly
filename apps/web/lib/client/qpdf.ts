@@ -126,3 +126,13 @@ export async function unlockPdf(bytes: Uint8Array, password: string): Promise<Ui
   if (!r.output) throw new WrongPasswordError("That password isn't right. Check it and try again.");
   return r.output;
 }
+
+/** Structural optimisation: object streams, maximum Flate, unused resources dropped. */
+export async function optimizePdf(bytes: Uint8Array): Promise<Uint8Array> {
+  const r = await run(bytes, (i, o) => [
+    "--object-streams=generate", "--compress-streams=y", "--recompress-flate", "--compression-level=9",
+    "--remove-unreferenced-resources=yes", "--", i, o,
+  ], true);
+  if (!r.output) throw new Error(r.text || "qpdf couldn't optimise the file");
+  return r.output;
+}

@@ -111,6 +111,20 @@ Both run in the browser with qpdf 12 compiled to WebAssembly (`@neslinesli93/qpd
   upload list. Files that open without a password but have locked permissions need the permissions (owner)
   password; qpdf's report of which password was supplied is checked. The decrypted copy is what's stored.
 
+## Compression
+
+Download ▾ → *Compress…* (`lib/client/compress.ts`, `packages/shared/src/compress.ts`). The worker lists every
+image worth shrinking (not bilevel scans, not tiny ones) with the largest size it's shown at; the browser renders
+each with PDF.js, downsamples it to a target resolution at that size and re-encodes it as JPEG, keeping only
+results that are smaller; the worker swaps them in and drops metadata and thumbnails; qpdf then rebuilds the file
+with object streams, maximum Flate and unused resources removed.
+
+- **Presets:** Light (220 dpi), Recommended (150 dpi), Smallest (100 dpi).
+- **Under a size** (100 KB, 200 KB, 500 KB, 1 MB or any value): steps down a quality ladder (220 → 50 dpi), jumping
+  further when far off, then steps back up through skipped levels so the result keeps the most quality that fits.
+  Text and fonts can't shrink, so a text-only PDF may not reach a tiny limit; the dialog says so.
+- The result can be downloaded or saved as a new version.
+
 ## Redaction
 
 The **Redact** tool deletes what's under a marked area from the file; it doesn't just cover it.
@@ -188,6 +202,7 @@ BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smo
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
 python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
 python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
+python3 scripts/ui_compress.py                                                           # Compress: preset and a size limit
 python3 scripts/ui_security.py                                                           # Protect with password, unlock on upload
 python3 scripts/ui_stamps.py                                                             # Page stamps: dialog, preview, saved file
 python3 scripts/ui_redact.py                                                             # Redaction: find, mark, save, check file + pixels
