@@ -44,12 +44,13 @@ export function blobStorageDriver(): StorageDriver {
       return {
         url: presignedUrl,
         method: "PUT",
+        // Only headers the Blob API lists in Access-Control-Allow-Headers: anything else
+        // fails the browser's CORS preflight (it surfaced as "Network error during upload").
+        // addRandomSuffix / allowOverwrite are already signed into the URL's query string.
         headers: {
           "x-api-version": BLOB_API_VERSION,
           "x-vercel-blob-access": "private",
           "x-content-type": contentType,
-          "x-add-random-suffix": "0",
-          "x-allow-overwrite": "1",
         },
         expiresAt: new Date(expires).toISOString(),
       };
