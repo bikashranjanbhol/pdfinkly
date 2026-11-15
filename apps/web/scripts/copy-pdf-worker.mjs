@@ -40,4 +40,8 @@ for (const lang of ["eng", "hin"]) {
   const dir = path.dirname(require.resolve(`@tesseract.js-data/${lang}/package.json`));
   await copyFile(path.join(dir, "4.0.0_best_int", `${lang}.traineddata.gz`), path.join(pub, "tessdata", `${lang}.traineddata.gz`));
 }
-console.log(`pdf.worker.min.mjs, ${n} font files, Tesseract engine and eng/hin models copied to public/`);
+// qpdf (password protection/unlock), served as plain files and loaded as a script.
+const qpdfDir = path.join(path.dirname(require.resolve("@neslinesli93/qpdf-wasm/package.json")), "dist");
+await mkdir(path.join(pub, "qpdf"), { recursive: true });
+for (const f of ["qpdf.js", "qpdf.wasm"]) await copyFile(path.join(qpdfDir, f), path.join(pub, "qpdf", f));
+console.log(`pdf.worker.min.mjs, ${n} font files, Tesseract engine, eng/hin models and qpdf copied to public/`);

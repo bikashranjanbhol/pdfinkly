@@ -12,3 +12,4 @@ apps/web/public/pdf.worker.min.mjs
 apps/web/public/fonts
 apps/web/public/tesseract
 apps/web/public/tessdata
+apps/web/public/qpdf

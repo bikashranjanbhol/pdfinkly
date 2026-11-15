@@ -99,6 +99,18 @@ on export in the page's visual frame, so they read upright on rotated pages
 - **Bates numbering:** prefix + zero-padded running number + suffix (e.g. `ACME-000041`) in any corner or edge
   centre, on chosen pages; the dialog shows the range used and where the next document should start.
 
+## Password protection and unlocking
+
+Both run in the browser with qpdf 12 compiled to WebAssembly (`@neslinesli93/qpdf-wasm`, copied to
+`public/qpdf/` and loaded as a script: `lib/client/qpdf.ts`).
+
+- **Protect:** Download ▾ → *Download with password…*: an open password and/or permissions (print, copy,
+  edit), AES-256 (PDF 2.0, revision 6). Restricting without a permissions password uses a random one, so the
+  restrictions can't be lifted from the downloaded copy. The file in PDFInkly is unchanged.
+- **Unlock:** uploading a protected PDF (detected by an `/Encrypt` scan, then qpdf) asks for its password in the
+  upload list. Files that open without a password but have locked permissions need the permissions (owner)
+  password; qpdf's report of which password was supplied is checked. The decrypted copy is what's stored.
+
 ## Redaction
 
 The **Redact** tool deletes what's under a marked area from the file; it doesn't just cover it.
@@ -176,6 +188,7 @@ BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smo
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
 python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
 python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
+python3 scripts/ui_security.py                                                           # Protect with password, unlock on upload
 python3 scripts/ui_stamps.py                                                             # Page stamps: dialog, preview, saved file
 python3 scripts/ui_redact.py                                                             # Redaction: find, mark, save, check file + pixels
 ```

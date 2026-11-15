@@ -25,6 +25,9 @@ importers:
       '@fontsource/carlito':
         specifier: 5.3.0
         version: 5.3.0
+      '@neslinesli93/qpdf-wasm':
+        specifier: 0.3.1
+        version: 0.3.1
       '@pdfinkly/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -504,6 +507,9 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1 || 2.0.0-beta.2
       '@emnapi/runtime': ^1.7.1 || 2.0.0-beta.2
+
+  '@neslinesli93/qpdf-wasm@0.3.1':
+    resolution: {integrity: sha512-pN6wK7JSq66dtmFpncxPAvuOrILm+sdrm1SI8ZKMCl3TSKKHQeCXoes4p8gXNez8dpEhZ0st+qeN4tLbeCm3kw==}
 
   '@next/env@16.4.6':
     resolution: {integrity: sha512-SunBjJ6t+oBtecS3dTjdVuMhUogP5wD/vrGL5EVuQYM1iS4O5ilL51HkiJ3sPjMzRHiCChvr4dbaSJbR7F3lxA==}
@@ -1906,6 +1912,8 @@ snapshots:
       '@emnapi/runtime': 2.0.0-beta.2
       '@tybys/wasm-util': 0.10.4
     optional: true
+
+  '@neslinesli93/qpdf-wasm@0.3.1': {}
 
   '@next/env@16.4.6': {}
 

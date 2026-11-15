@@ -28,6 +28,8 @@ import { Organize } from "./Organize";
 import { DocsContext, PageCanvas, PageView, usePageInfo } from "./PageView";
 import { Properties } from "./Properties";
 import { StampsDialog } from "./StampsDialog";
+import { ProtectDialog } from "./ProtectDialog";
+import type { Protection } from "@/lib/client/qpdf";
 import { ShareDialog } from "./ShareDialog";
 import { SignatureDialog } from "./SignatureDialog";
 import { readFormFields, SignPanel, type FormField } from "./SignPanel";
@@ -67,7 +69,8 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "export" | "save" | "merge">(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr" | "stamps">(null);
+  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr" | "stamps" | "protect">(null);
+  const [downloadMenu, setDownloadMenu] = useState(false);
   const [scanHint, setScanHint] = useState(false);
   const ocrRequest = useEditor((s) => s.ocrRequest);
   useEffect(() => { if (ocrRequest) setDialog("ocr"); }, [ocrRequest]);
@@ -276,17 +279,35 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
     return checks.reduce((n, c) => n + c.rects.length, 0);
   }
 
-  async function download() {
-    if (!doc) return;
+  /** The PDF as it would be saved now (the stored file when nothing changed). */
+  async function currentBytes(): Promise<Uint8Array> {
+    exportWarnings.current = [];
     const current = effectiveOps(useEditor.getState());
-    if (current.length === 0 && doc.baseVersionId === doc.currentVersionId) {
-      saveBytes(doc.baseBytes, doc.file.name); // already in memory
-      return;
-    }
+    if (current.length === 0 && doc!.baseVersionId === doc!.currentVersionId) return doc!.baseBytes;
+    const bytes = await exportBytes();
+    await checkRedactions(bytes);
+    return bytes;
+  }
+
+  /** Download a password-protected copy (throws to the dialog on failure). */
+  async function downloadProtected(p: Protection) {
+    if (!doc) return;
     setBusy("export");
     try {
-      const bytes = await exportBytes();
-      await checkRedactions(bytes);
+      const { protectPdf } = await import("@/lib/client/qpdf");
+      const bytes = await protectPdf(await currentBytes(), p);
+      saveBytes(bytes, doc.file.name.replace(/\.pdf$/i, "") + " (protected).pdf");
+      setNotice(withWarnings(`Downloaded a protected copy${p.openPassword ? " that needs the password to open" : ""}.`));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function download() {
+    if (!doc) return;
+    setBusy("export");
+    try {
+      const bytes = await currentBytes();
       saveBytes(bytes, doc.file.name);
       if (exportWarnings.current.length) setNotice(withWarnings("Downloaded."));
     } catch (e) {
@@ -430,9 +451,24 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
               <button type="button" className="btn-secondary min-h-10 px-3 text-sm" disabled={!!busy} onClick={() => setDialog("ocr")} title="Recognise text in scanned pages (OCR)"><IconScan size={18} />Recognise text</button>
               <button type="button" className="btn-secondary min-h-10 px-3 text-sm" onClick={() => setDialog("history")}><IconHistory size={18} />History</button>
               <button type="button" className="btn-secondary min-h-10 px-3 text-sm" onClick={() => setDialog("share")}><IconShare size={18} />Share</button>
-              <button type="button" aria-label="Download PDF" title="Download PDF" disabled={!!busy} className="btn-secondary min-h-10 px-2.5" onClick={() => void download()}>
-                <IconDownload size={18} />
-              </button>
+              <div className="relative">
+                <button type="button" aria-label="Download" title="Download" aria-haspopup="menu" aria-expanded={downloadMenu} disabled={!!busy}
+                  className="btn-secondary min-h-10 px-2.5" onClick={() => setDownloadMenu((v) => !v)}>
+                  <IconDownload size={18} />
+                </button>
+                {downloadMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setDownloadMenu(false)} />
+                    <div role="menu" aria-label="Download" className="absolute right-0 top-12 z-50 flex w-60 flex-col rounded-xl border border-zinc-200 bg-white p-1 shadow-lg"
+                      onKeyDown={(e) => e.key === "Escape" && setDownloadMenu(false)}>
+                      <button type="button" role="menuitem" autoFocus className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
+                        onClick={() => { setDownloadMenu(false); void download(); }}>Download PDF</button>
+                      <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
+                        onClick={() => { setDownloadMenu(false); setDialog("protect"); }}>Download with password…</button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button type="button" disabled={!!busy || unsaved === 0} className="btn-primary min-h-10 text-sm" onClick={() => void saveVersion()}>
                 {busy === "save" ? "Saving…" : "Save version"}
               </button>
@@ -515,6 +551,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
             }}
           />
         )}
+        {dialog === "protect" && <ProtectDialog fileName={doc.file.name} onClose={() => setDialog(null)} onProtect={downloadProtected} />}
         {dialog === "stamps" && <StampsDialog model={model} fileName={doc.file.name} onClose={() => setDialog(null)} />}
         {dialog === "share" && <ShareDialog fileId={fileId} fileName={doc.file.name} isGuest={isGuest} hasUnsaved={unsaved > 0} onClose={() => setDialog(null)} />}
         {dialog === "history" && (
