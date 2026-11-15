@@ -92,14 +92,18 @@ reload, rotates and deletes pages, saves a version, and then opens the saved PDF
    updated automatically: every **production** build runs the migrations (`prebuild`), using the direct connection,
    inside one transaction with a lock. Preview builds skip this, so a feature branch can't change the production schema.
    Any other Postgres works too: set `DATABASE_URL` yourself.
-2. **Storage**: create a private Cloudflare R2 bucket (no egress fees) and an API token with object read/write.
-   Add a CORS rule so the browser can upload and download directly:
+2. **Storage** (pick one):
+   - **Vercel Blob** (simplest): in the project, **Storage → Create Database → Blob**, access **Private**,
+     connect it to the project, and set `STORAGE_DRIVER=blob`. Nothing else to configure: the app signs a
+     short-lived URL per upload/download and authenticates with Vercel's OIDC token.
+   - **Cloudflare R2 / S3**: create a private bucket and an API token with object read/write, set
+     `STORAGE_DRIVER=s3` and the `S3_*` variables, and add a CORS rule so the browser can upload and download directly:
    ```json
    [{ "AllowedOrigins": ["https://your-domain.com"], "AllowedMethods": ["GET", "PUT"],
       "AllowedHeaders": ["content-type"], "MaxAgeSeconds": 3600 }]
    ```
 3. **Vercel project**: import the repo and set **Root Directory** to `apps/web` (Vercel detects the pnpm workspace).
-   Add the variables from `.env.example` with `STORAGE_DRIVER=s3` and `APP_URL` set to your domain.
+   Add the variables from `.env.example` with `APP_URL` set to your domain.
 4. **OAuth** (optional): set the callback URLs to `<APP_URL>/api/auth/callback/google` and `…/github`.
 5. Deploy. `apps/web/vercel.json` registers the daily cleanup cron; Vercel sends `CRON_SECRET` with each call.
 

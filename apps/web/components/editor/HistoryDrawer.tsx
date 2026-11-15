@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { VersionInfo } from "@pdfinkly/shared";
-import { api, formatBytes, formatWhen } from "@/lib/client/api";
+import { api, formatBytes, formatWhen, saveUrlAs } from "@/lib/client/api";
 import { IconDownload, IconX } from "../icons";
 
 const SOURCE: Record<VersionInfo["source"], string> = { upload: "Uploaded", edit: "Saved from editor", job: "Processed" };
@@ -27,8 +27,8 @@ export function HistoryDrawer({ fileId, currentVersionId, unsavedCount, onRestor
   }, [fileId, onClose]);
 
   async function download(v: VersionInfo) {
-    const r = await api<{ downloadUrl: string }>(`/api/files/${fileId}/versions/${v.id}`);
-    window.location.href = r.downloadUrl;
+    const r = await api<{ downloadUrl: string; downloadName: string }>(`/api/files/${fileId}/versions/${v.id}`);
+    await saveUrlAs(r.downloadUrl, r.downloadName);
   }
 
   return (

@@ -68,3 +68,31 @@ export function formatWhen(iso: string): string {
   if (d.toDateString() === y.toDateString()) return `Yesterday, ${time}`;
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" });
 }
+
+/** Save bytes as a file with the given name. */
+export function saveBytes(bytes: Uint8Array, name: string) {
+  const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "application/pdf" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * Download a (signed, cross-origin) URL under a chosen file name. Storage URLs
+ * can't always set Content-Disposition, and the `download` attribute is ignored
+ * cross-origin, so fetch the bytes and save them locally. Falls back to opening
+ * the URL if the fetch fails.
+ */
+export async function saveUrlAs(url: string, name: string) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    saveBytes(new Uint8Array(await res.arrayBuffer()), name);
+  } catch {
+    window.location.href = url;
+  }
+}

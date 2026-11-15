@@ -10,8 +10,9 @@ export const env = {
     if (!s) throw new Error("AUTH_SECRET is not set");
     return s;
   },
-  get storageDriver(): "s3" | "local" {
-    return process.env.STORAGE_DRIVER === "s3" ? "s3" : "local";
+  get storageDriver(): "blob" | "s3" | "local" {
+    const d = process.env.STORAGE_DRIVER;
+    return d === "blob" || d === "s3" ? d : "local";
   },
   google: () => (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET ? true : false),
   github: () => (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET ? true : false),

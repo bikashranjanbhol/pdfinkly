@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { and, eq, isNull } from "drizzle-orm";
 import { fileVersions, files, getDb, shareLinks, users } from "@pdfinkly/db";
+import { DownloadButton } from "@/components/DownloadButton";
 import { Logo } from "@/components/Logo";
 import { SharedViewer } from "@/components/SharedViewer";
 import { liveFile } from "@/lib/server/files";
@@ -44,7 +45,7 @@ export default async function SharedPage({ params }: { params: Promise<{ token: 
                   Shared{row.owner ? ` by ${row.owner}` : ""} · view only{row.version.pageCount ? ` · ${row.version.pageCount} pages` : ""}
                 </div>
               </div>
-              <a className="btn-primary" href={await storage().presignGet(row.version.storageKey, { downloadName: row.file.name })}>Download</a>
+              <DownloadButton url={await storage().presignGet(row.version.storageKey, { downloadName: row.file.name })} name={row.file.name} />
             </>
           )}
         </div>

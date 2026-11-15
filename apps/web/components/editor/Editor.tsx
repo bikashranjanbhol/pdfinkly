@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deriveModel, newId, OperationsSchema, type FileSummary, type Operation } from "@pdfinkly/shared";
-import { api, ApiFailure } from "@/lib/client/api";
+import { api, ApiFailure, saveBytes } from "@/lib/client/api";
 import { fetchBytes, openPdf, uploadNewPdf, uploadNewVersion } from "@/lib/client/pdf";
 import { IconBack, IconCheck, IconDownload, IconHistory, IconShare } from "../icons";
 import { Mark } from "../Logo";
@@ -208,18 +208,12 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
     if (!doc) return;
     const current = effectiveOps(useEditor.getState());
     if (current.length === 0 && doc.baseVersionId === doc.currentVersionId) {
-      window.location.href = doc.downloadUrl;
+      saveBytes(doc.baseBytes, doc.file.name); // already in memory
       return;
     }
     setBusy("export");
     try {
-      const bytes = await exportBytes();
-      const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "application/pdf" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = doc.file.name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      saveBytes(await exportBytes(), doc.file.name);
     } catch (e) {
       setNotice(e instanceof Error ? `Couldn't create the PDF: ${e.message}` : "Couldn't create the PDF.");
     } finally {

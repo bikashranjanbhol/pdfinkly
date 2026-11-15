@@ -11,10 +11,11 @@ export const GET = handle(async (_req: Request, ctx: Ctx) => {
   const actor = await requireActor();
   const file = await getOwnedFile(actor, uuidParam(p.fileId));
   const v = await getVersion(file.id, uuidParam(p.versionId));
-  const base = file.name.replace(/\.pdf$/i, "");
+  const downloadName = `${file.name.replace(/\.pdf$/i, "")} (v${v.versionNo}).pdf`;
   return ok({
     version: toVersionInfo(v),
     viewUrl: await storage().presignGet(v.storageKey),
-    downloadUrl: await storage().presignGet(v.storageKey, { downloadName: `${base} (v${v.versionNo}).pdf` }),
+    downloadUrl: await storage().presignGet(v.storageKey, { downloadName }),
+    downloadName,
   });
 });
