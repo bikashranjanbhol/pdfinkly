@@ -130,6 +130,14 @@ Download ▾ → *Convert to Word, Excel…* — runs in the browser (`lib/clien
 - **Scanned pages:** offered OCR (English/Hindi) first; the recognised text layer is what gets converted, so a scan
   becomes an editable Word document.
 
+## Pictures → PDF
+
+Dropping pictures (JPG, PNG, WebP, GIF, BMP, AVIF; HEIC where the browser can read it) on the upload page opens
+a *Make a PDF* panel: reorder or remove them, pick A4, US Letter or "same as the picture", with or without a
+white margin. Pages turn to match each picture. JPEG and PNG are embedded as they are (no quality loss);
+phone photos stored sideways (EXIF orientation) and other formats are redrawn upright first
+(`lib/client/images.ts`, `packages/shared/src/images.ts`).
+
 ## Compression
 
 Download ▾ → *Compress…* (`lib/client/compress.ts`, `packages/shared/src/compress.ts`). The worker lists every
@@ -221,6 +229,7 @@ BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smo
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
 python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
 python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
+python3 scripts/ui_images.py                                                             # Pictures → PDF: order, page size, EXIF rotation
 python3 scripts/ui_convert.py                                                            # Convert: Word, PowerPoint, images, Excel, scan → Word
 python3 scripts/ui_compress.py                                                           # Compress: preset and a size limit
 python3 scripts/ui_security.py                                                           # Protect with password, unlock on upload

@@ -428,3 +428,4 @@ async function drawAnnotation(
     }
   }
 }
+export { imagesToPdf, type PageImage, type ImagesToPdfOptions } from "./images";

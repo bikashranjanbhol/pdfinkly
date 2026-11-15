@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiFailure, formatBytes } from "@/lib/client/api";
 import { uploadNewPdf } from "@/lib/client/pdf";
 import { IconCheck, IconLock, IconUpload } from "./icons";
@@ -22,20 +22,37 @@ type Item = {
   abort?: AbortController;
 };
 
+type Picture = { key: string; file: File; url: string };
+
 export function Uploader() {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
+  const [pictures, setPictures] = useState<Picture[]>([]);
+  const [pageSize, setPageSize] = useState<"a4" | "letter" | "fit">("a4");
+  const [margin, setMargin] = useState(true);
+  const [building, setBuilding] = useState(false);
+  const [buildError, setBuildError] = useState<string | null>(null);
+  useEffect(() => () => pictures.forEach((p) => URL.revokeObjectURL(p.url)), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const patch = (key: string, p: Partial<Item>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...p } : x)));
 
+  const isPicture = (f: File) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i.test(f.name);
+
   async function start(files: FileList | File[]) {
-    const list = Array.from(files);
-    const single = list.length === 1;
+    const all = Array.from(files);
+    // Pictures go to the "make a PDF" panel; PDFs upload straight away.
+    const pics = all.filter(isPicture);
+    if (pics.length) {
+      setBuildError(null);
+      setPictures((cur) => [...cur, ...pics.map((file) => ({ key: `${file.name}-${file.size}-${Math.random()}`, file, url: URL.createObjectURL(file) }))]);
+    }
+    const list = all.filter((f) => !isPicture(f));
+    const single = list.length === 1 && !pics.length;
     for (const file of list) {
       const key = `${file.name}-${file.size}-${Math.random()}`;
       if (file.type && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-        setItems((xs) => [{ key, name: file.name, size: file.size, state: "error", progress: 0, message: "This isn't a PDF. Only PDF files can be edited here." }, ...xs]);
+        setItems((xs) => [{ key, name: file.name, size: file.size, state: "error", progress: 0, message: "This isn't a PDF or a picture." }, ...xs]);
         continue;
       }
       // Protected PDFs are unlocked here (in the browser) before upload; editing needs the decrypted file.
@@ -48,6 +65,37 @@ export function Uploader() {
         }
       }
       await upload(key, file, single, true);
+    }
+  }
+
+  function move(i: number, by: number) {
+    setPictures((cur) => {
+      const next = [...cur];
+      const [p] = next.splice(i, 1);
+      next.splice(Math.max(0, Math.min(next.length, i + by)), 0, p!);
+      return next;
+    });
+  }
+
+  async function buildPdf() {
+    setBuilding(true);
+    setBuildError(null);
+    try {
+      const { prepareImage } = await import("@/lib/client/images");
+      const { imagesToPdf } = await import("@pdfinkly/shared/export");
+      const prepared = [];
+      for (const p of pictures) prepared.push(await prepareImage(p.file));
+      const first = pictures[0]!.file.name.replace(/\.[^.]+$/, "");
+      const name = pictures.length === 1 ? `${first}.pdf` : `${first} and ${pictures.length - 1} more.pdf`;
+      const bytes = await imagesToPdf(prepared, { pageSize, margin: margin ? 28 : 0, title: name.replace(/\.pdf$/, "") });
+      const file = new File([bytes as BlobPart], name, { type: "application/pdf" });
+      pictures.forEach((p) => URL.revokeObjectURL(p.url));
+      setPictures([]);
+      await upload(`${name}-${Math.random()}`, file, true, true);
+    } catch (e) {
+      setBuildError(e instanceof Error ? e.message : "Couldn't make the PDF.");
+    } finally {
+      setBuilding(false);
     }
   }
 
@@ -94,13 +142,54 @@ export function Uploader() {
         className={`flex cursor-pointer flex-col items-center gap-3 rounded-[18px] border-2 border-dashed px-6 py-12 text-center transition-colors ${drag ? "border-brand-700 bg-brand-100" : "border-brand-600 bg-brand-50"}`}
       >
         <span className="flex size-[60px] items-center justify-center rounded-2xl bg-white text-brand-600 shadow-sm"><IconUpload size={30} /></span>
-        <span className="text-xl font-bold text-brand-900">Drop PDFs here</span>
+        <span className="text-xl font-bold text-brand-900">Drop PDFs or pictures here</span>
         <span className="text-brand-800">or <span className="font-semibold underline">browse your device</span></span>
-        <input ref={input} id="file-input" type="file" accept="application/pdf,.pdf" multiple className="sr-only" onChange={(e) => e.target.files && void start(e.target.files)} />
+        <input ref={input} id="file-input" type="file" accept="application/pdf,.pdf,image/*" multiple className="sr-only" onChange={(e) => e.target.files && void start(e.target.files)} />
       </label>
       <p className="-mt-2 flex items-center gap-2 text-[13px] text-zinc-600">
         <IconLock size={16} />Files go straight to private storage over HTTPS. Guest files are deleted automatically.
       </p>
+
+      {pictures.length > 0 && (
+        <section aria-labelledby="pics" className="card flex flex-col gap-4 p-5">
+          <div>
+            <h2 id="pics" className="text-base font-semibold">Make a PDF from {pictures.length === 1 ? "1 picture" : `${pictures.length} pictures`}</h2>
+            <p className="text-[13px] text-zinc-600">One page per picture, in this order. Done in your browser before upload.</p>
+          </div>
+          <ol className="flex flex-wrap gap-3">
+            {pictures.map((p, i) => (
+              <li key={p.key} className="flex w-28 flex-col items-center gap-1.5 rounded-xl border border-zinc-200 p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.url} alt={p.file.name} className="h-24 w-full rounded object-contain" />
+                <span className="w-full truncate text-center text-[11px] text-zinc-600">{i + 1}. {p.file.name}</span>
+                <div className="flex gap-1">
+                  <button type="button" className="btn-ghost min-h-7 px-1.5 text-xs" aria-label={`Move ${p.file.name} earlier`} disabled={i === 0} onClick={() => move(i, -1)}>←</button>
+                  <button type="button" className="btn-ghost min-h-7 px-1.5 text-xs" aria-label={`Move ${p.file.name} later`} disabled={i === pictures.length - 1} onClick={() => move(i, 1)}>→</button>
+                  <button type="button" className="btn-ghost min-h-7 px-1.5 text-xs text-red-700" aria-label={`Remove ${p.file.name}`}
+                    onClick={() => { URL.revokeObjectURL(p.url); setPictures((cur) => cur.filter((x) => x.key !== p.key)); }}>✕</button>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="flex flex-wrap items-end gap-4">
+            <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+              Page size
+              <select className="field h-10 font-normal" value={pageSize} onChange={(e) => setPageSize(e.target.value as typeof pageSize)}>
+                <option value="a4">A4</option>
+                <option value="letter">US Letter</option>
+                <option value="fit">Same as the picture</option>
+              </select>
+            </label>
+            {pageSize !== "fit" && (
+              <label className="flex h-10 items-center gap-2 text-sm"><input type="checkbox" checked={margin} onChange={(e) => setMargin(e.target.checked)} /> White margin</label>
+            )}
+            <button type="button" className="btn-primary ml-auto min-h-10" disabled={building} onClick={() => void buildPdf()}>
+              {building ? "Making the PDF…" : `Make PDF${pictures.length > 1 ? ` (${pictures.length} pages)` : ""}`}
+            </button>
+          </div>
+          {buildError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{buildError}</p>}
+        </section>
+      )}
 
       {items.length > 0 && (
         <section aria-labelledby="queue" className="card">
