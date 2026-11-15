@@ -106,9 +106,31 @@ export const WatermarkSchema = z.object({
 });
 export type Watermark = z.infer<typeof WatermarkSchema>;
 
-export const StampSchema = z.discriminatedUnion("kind", [WatermarkSchema]);
+const SlotText = z.string().max(200);
+/**
+ * Text in the page margins: three slots (left, centre, right) at the top and at
+ * the bottom. Slots may use {page}, {pages}, {date} and {file}. {page} counts the
+ * stamped pages from `startAt`; {pages} is the last such number.
+ */
+export const HeaderFooterSchema = z.object({
+  kind: z.literal("headerFooter"),
+  top: z.tuple([SlotText, SlotText, SlotText]),
+  bottom: z.tuple([SlotText, SlotText, SlotText]),
+  font: FontSchema,
+  size: z.number().min(5).max(36),
+  color: ColorSchema,
+  /** Distance from the page edge to the text, points. */
+  margin: z.number().min(4).max(144),
+  startAt: z.number().int().min(0).max(1_000_000),
+  pages: PageRangeSchema,
+});
+export type HeaderFooter = z.infer<typeof HeaderFooterSchema>;
+
+export const StampSchema = z.discriminatedUnion("kind", [WatermarkSchema, HeaderFooterSchema]);
 export type Stamp = z.infer<typeof StampSchema>;
 export type StampKey = Stamp["kind"];
+/** One stamp of each kind, typed by kind. */
+export type Stamps = { [K in StampKey]?: Extract<Stamp, { kind: K }> };
 
 export const OperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("annot.add"), id: IdSchema, page: PageRefSchema, annot: AnnotationSchema }),
@@ -134,7 +156,7 @@ export const OperationSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("form.set"), field: z.string().min(1).max(500), value: z.union([z.string().max(5000), z.boolean()]) }),
   /** Set (or with null, remove) a document-wide stamp: one of each kind. */
-  z.object({ op: z.literal("stamp.set"), key: z.enum(["watermark"]), stamp: StampSchema.nullable() }),
+  z.object({ op: z.literal("stamp.set"), key: z.enum(["watermark", "headerFooter"]), stamp: StampSchema.nullable() }),
 ]);
 export type Operation = z.infer<typeof OperationSchema>;
 export const OperationsSchema = z.array(OperationSchema).max(20000);
@@ -164,7 +186,7 @@ export interface DocModel {
   annotations: PlacedAnnotation[];
   form: Record<string, string | boolean>;
   /** Document-wide stamps (watermark, …) by kind. */
-  stamps: Partial<Record<StampKey, Stamp>>;
+  stamps: Stamps;
   /** True when pages were moved, rotated, deleted or inserted. */
   structureChanged: boolean;
   /** Versions merged in, which export needs the bytes of. */
@@ -182,7 +204,7 @@ export function deriveModel(basePageCount: number, ops: readonly Operation[]): D
   }));
   const annots = new Map<string, PlacedAnnotation>();
   const form: Record<string, string | boolean> = {};
-  const stamps: Partial<Record<StampKey, Stamp>> = {};
+  const stamps: Stamps = {};
   const external = new Set<string>();
   let structureChanged = false;
 
@@ -245,7 +267,7 @@ export function deriveModel(basePageCount: number, ops: readonly Operation[]): D
         break;
       }
       case "stamp.set":
-        if (op.stamp && op.stamp.kind === op.key) stamps[op.key] = op.stamp;
+        if (op.stamp && op.stamp.kind === op.key) (stamps as Record<StampKey, Stamp>)[op.key] = op.stamp;
         else delete stamps[op.key];
         break;
       case "form.set":

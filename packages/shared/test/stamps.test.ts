@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 import { exportPdf } from "../src/export";
-import type { Operation, Watermark } from "../src/operations";
+import type { HeaderFooter, Operation, Watermark } from "../src/operations";
 import { parsePageRange } from "../src/stampLayout";
 
 const FIX = path.join(__dirname, "fixtures");
@@ -96,3 +96,52 @@ describe("watermark", () => {
     expect(raw).toMatch(/\/Subtype \/Image/);
   });
 });
+
+const hf = (over: Partial<HeaderFooter> = {}): HeaderFooter => ({
+  kind: "headerFooter", top: ["", "", ""], bottom: ["", "Page {page} of {pages}", ""], font: "Helvetica", size: 10,
+  color: "#3F3F46", margin: 28, startAt: 1, pages: "", ...over,
+});
+const three = async () => {
+  const d = await PDFDocument.load(fixture("chrome-cid.pdf"));
+  const copies = await d.copyPages(d, [0, 0]);
+  copies.forEach((c) => d.addPage(c));
+  return d.save();
+};
+
+describe("page numbers, headers and footers", () => {
+  it("numbers every page, centred at the bottom", async () => {
+    const out = await exportPdf({ base: await three(), ops: [{ op: "stamp.set", key: "headerFooter", stamp: hf() }] });
+    for (const n of [1, 2, 3]) {
+      const it = (await items(out, n)).find((i) => i.str.startsWith("Page "))!;
+      expect(it.str).toBe(`Page ${n} of 3`);
+      const centre = it.transform[4]! + it.width / 2;
+      expect(Math.abs(centre - 595.28 / 2)).toBeLessThan(1);
+      expect(it.transform[5]).toBeCloseTo(28, 0);
+    }
+  });
+
+  it("fills slots, skips the cover and starts counting at the chosen number", async () => {
+    const out = await exportPdf({
+      base: await three(), fileName: "Contract.pdf",
+      ops: [{ op: "stamp.set", key: "headerFooter", stamp: hf({ top: ["{file}", "", "Printed {date}"], bottom: ["", "", "{page}/{pages}"], pages: "2-", startAt: 1 }) }],
+    });
+    expect((await items(out, 1)).some((i) => i.str.includes("Contract.pdf"))).toBe(false);
+    const p2 = await items(out, 2);
+    expect(p2.find((i) => i.str === "Contract.pdf")!.transform[4]).toBeCloseTo(28, 0);
+    expect(p2.find((i) => i.str === "1/2")).toBeTruthy();
+    expect(p2.some((i) => /^Printed \d{2}\/\d{2}\/\d{4}$/.test(i.str))).toBe(true);
+    const right = p2.find((i) => i.str === "1/2")!;
+    expect(right.transform[4]! + right.width).toBeCloseTo(595.92 - 28, 0); // chrome-cid.pdf is 595.92 pt wide
+    expect((await items(out, 3)).find((i) => i.str === "2/2")).toBeTruthy();
+  });
+
+  it("follows the page's rotation", async () => {
+    const out = await exportPdf({ base: fixture("chrome-cid.pdf"), ops: [{ op: "page.rotate", page: "p1", degrees: 90 }, { op: "stamp.set", key: "headerFooter", stamp: hf() }] });
+    const it = (await items(out)).find((i) => i.str.startsWith("Page"))!;
+    expect(it.transform[0]).toBeCloseTo(0, 3);
+    expect(it.transform[1]!).toBeGreaterThan(0);
+    // Bottom edge as displayed = the page's right edge (x = width - margin).
+    expect(it.transform[4]).toBeCloseTo(595.92 - 28, 0);
+  });
+});
+

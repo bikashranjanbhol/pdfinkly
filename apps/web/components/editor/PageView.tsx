@@ -94,6 +94,7 @@ export function PageView({
   stamps,
   pageNo = 1,
   pageCount = 1,
+  fileName = "",
 }: {
   entry: PageEntry;
   label: string;
@@ -104,6 +105,7 @@ export function PageView({
   stamps?: DocModel["stamps"];
   pageNo?: number;
   pageCount?: number;
+  fileName?: string;
 }) {
   const info = usePageInfo(entry);
   const tool = useEditor((s) => s.tool);
@@ -325,7 +327,7 @@ export function PageView({
       onPointerCancel={() => setDrag(null)}
     >
       <PageCanvas info={info} g={g} visible={visible} />
-      {stamps && <StampOverlay stamps={stamps} g={g} pageNo={pageNo} pageCount={pageCount} />}
+      {stamps && <StampOverlay stamps={stamps} g={g} pageNo={pageNo} pageCount={pageCount} fileName={fileName} />}
       <svg className="pointer-events-none absolute inset-0" width={g.width} height={g.height} aria-hidden="true">
         {shown.map((p) => <ShapeSvg key={p.id} a={p.id === editingText && p.annot.kind === "replace" ? { ...p.annot, text: "" } : p.annot} g={g} />)}
         {drag?.kind === "rect" && (

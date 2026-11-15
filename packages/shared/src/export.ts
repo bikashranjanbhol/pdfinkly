@@ -41,6 +41,8 @@ export interface ExportInput {
   ocr?: Record<string, OcrLine[]>;
   /** Images under redactions with their pixels blacked out (see planRedactionImages). */
   redactImages?: RedactImageResult[];
+  /** The file's name, for {file} in headers and footers. */
+  fileName?: string;
 }
 
 export class ExportError extends Error {
@@ -182,7 +184,7 @@ function replaceTargets(model: DocModel, match: (src: PageEntry["source"]) => nu
   return [...byIndex].map(([index, annots]) => ({ index, annots }));
 }
 
-export async function exportPdf({ base, ops, external = {}, loadFont, onWarning, ocr, redactImages = [] }: ExportInput): Promise<Uint8Array> {
+export async function exportPdf({ base, ops, external = {}, loadFont, onWarning, ocr, redactImages = [], fileName }: ExportInput): Promise<Uint8Array> {
   const src = await load(base);
   const model = deriveModel(src.getPageCount(), ops);
   const redactions = redactionsByPage(model);
@@ -300,7 +302,7 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning,
     }
   }
   // Watermark and other page stamps, on the pages in their final order.
-  await drawStamps(out, model.pages.flatMap((p) => { const pg = pagesByRef.get(p.ref); return pg ? [pg] : []; }), model, onWarning);
+  await drawStamps(out, model.pages.flatMap((p) => { const pg = pagesByRef.get(p.ref); return pg ? [pg] : []; }), model, onWarning, { fileName });
 
   // Redact last, so nothing drawn above (edited text, OCR text, stamps) survives under a mark.
   if (redacting) {

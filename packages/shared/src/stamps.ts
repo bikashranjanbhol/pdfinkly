@@ -1,6 +1,6 @@
 import { PDFArray, PDFName, StandardFonts, degrees, rgb, type PDFDocument, type PDFFont, type PDFImage, type PDFPage, type PDFRef } from "pdf-lib";
-import type { DocModel, Watermark } from "./operations";
-import { parsePageRange, startFor, watermarkCentres } from "./stampLayout";
+import type { DocModel, HeaderFooter, Watermark } from "./operations";
+import { fillSlot, parsePageRange, slotStart, stampDate, startFor, watermarkCentres } from "./stampLayout";
 import { fromTextFrame } from "./visual";
 
 export { parsePageRange } from "./stampLayout";
@@ -80,8 +80,42 @@ export async function drawWatermark(doc: PDFDocument, page: PDFPage, wm: Waterma
   }
 }
 
+const STD: Record<HeaderFooter["font"], StandardFonts> = { Helvetica: StandardFonts.Helvetica, TimesRoman: StandardFonts.TimesRoman, Courier: StandardFonts.Courier };
+
+/** Draw header/footer slots on one page. Returns true if characters had to be dropped. */
+function drawMarginText(page: PDFPage, slots: { top: readonly string[]; bottom: readonly string[] }, font: PDFFont, size: number, color: string, margin: number): boolean {
+  const { rot, W, H, toPdf } = visualFrame(page);
+  let dropped = false;
+  for (const top of [true, false]) {
+    (top ? slots.top : slots.bottom).forEach((raw, slot) => {
+      const text = raw.trim();
+      if (!text) return;
+      const safe = winAnsi(font, text);
+      if (safe !== text) dropped = true;
+      const w = font.widthOfTextAtSize(safe, size);
+      const [x, y] = toPdf(...slotStart(slot, top, W, H, w, size, margin));
+      page.drawText(safe, { x, y, size, font, color: hex(color), ...(rot ? { rotate: degrees(rot) } : {}) });
+    });
+  }
+  return dropped;
+}
+
 /** Draw every stamp in the model on the pages it applies to (in final page order). */
-export async function drawStamps(doc: PDFDocument, pages: PDFPage[], model: DocModel, onWarning?: (w: string) => void) {
+export async function drawStamps(doc: PDFDocument, pages: PDFPage[], model: DocModel, onWarning?: (w: string) => void, meta: { fileName?: string } = {}) {
+  const hf = model.stamps.headerFooter;
+  if (hf && [...hf.top, ...hf.bottom].some((t) => t.trim())) {
+    const which = [...(parsePageRange(hf.pages, pages.length) ?? [])].sort((a, b) => a - b);
+    const font = await doc.embedFont(STD[hf.font]);
+    const date = stampDate();
+    const last = hf.startAt + which.length - 1;
+    let dropped = false;
+    which.forEach((pageNo, k) => {
+      const v = { page: hf.startAt + k, pages: last, date, file: meta.fileName ?? "" };
+      dropped = drawMarginText(pages[pageNo - 1]!, { top: hf.top.map((t) => fillSlot(t, v)), bottom: hf.bottom.map((t) => fillSlot(t, v)) }, font, hf.size, hf.color, hf.margin) || dropped;
+    });
+    if (dropped) onWarning?.("Some header or footer characters (e.g. Hindi) can't be drawn with the standard fonts yet and were left out.");
+  }
+
   const wm = model.stamps.watermark;
   if (wm && (wm.text.trim() || wm.image)) {
     const which = parsePageRange(wm.pages, pages.length) ?? new Set<number>();

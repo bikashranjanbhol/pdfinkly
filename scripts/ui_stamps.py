@@ -20,9 +20,19 @@ def saved(page):
     open("/tmp/stamps-last.pdf", "wb").write(raw)
     return pypdf.PdfReader(io.BytesIO(raw)), raw
 
+def version_no(page):
+    file_id = page.url.split("/edit/")[1].split("?")[0]
+    return page.evaluate("async (id) => ((await (await fetch(`/api/files/${id}`)).json()).currentVersion || {}).versionNo || 0", file_id)
+
 def save(page):
+    before = version_no(page)
     page.get_by_role("button", name="Save version").click()
     expect(page.get_by_text("Saved as a new version")).to_be_visible(timeout=60000)
+    for _ in range(120):
+        if version_no(page) > before:
+            return
+        page.wait_for_timeout(500)
+    raise AssertionError("no new version was saved")
 
 def open_stamps(page, tab=None):
     page.get_by_role("toolbar", name="Editing tools").get_by_role("button", name="Stamps").click()
@@ -71,6 +81,29 @@ def main():
         expect(dlg.get_by_role("button", name="Remove watermark")).to_have_count(0)
         dlg.get_by_role("button", name="Cancel").click()
         print("  ✓ after saving, the watermark is part of the file (dialog starts fresh)")
+
+        # --- Page numbers, header and footer
+        dlg = open_stamps(page, "Page numbers & headers")
+        expect(dlg.get_by_label("Page numbers", exact=True)).to_have_value("bottom-1")
+        expect(dlg.get_by_label("Footer centre")).to_have_value("Page {page} of {pages}")
+        dlg.get_by_label("Page numbers", exact=True).select_option("bottom-2")
+        dlg.get_by_label("Number format").select_option(label="1 / 9")
+        expect(dlg.get_by_label("Footer right")).to_have_value("{page} / {pages}")
+        expect(dlg.get_by_label("Footer centre")).to_have_value("")
+        dlg.get_by_label("Header left").fill("{file}")
+        dlg.get_by_label("Header right").fill("Confidential")
+        preview = dlg.get_by_test_id("stamp-preview")
+        expect(preview.get_by_text("1 / 1")).to_be_visible()
+        expect(preview.get_by_text("chrome-cid.pdf")).to_be_visible()
+        page.screenshot(path=f"{OUT}/stamps-03-header-dialog.png")
+        dlg.get_by_role("button", name="Add to pages").click()
+        expect(page.locator('[data-testid="stamp-preview"]').get_by_text("Confidential")).to_be_visible()
+        save(page)
+        reader, raw = saved(page)
+        text = reader.pages[0].extract_text()
+        for s in ["1 / 1", "chrome-cid.pdf", "Confidential", "Aditi Sharma"]:
+            assert s in text, f"{s!r} missing from saved file: {text}"
+        print("  ✓ page numbers (bottom right, 1 / 1), header with {file} and text: previewed and in the saved file")
         browser.close()
 
     real = [e for e in errors if "favicon" not in e]

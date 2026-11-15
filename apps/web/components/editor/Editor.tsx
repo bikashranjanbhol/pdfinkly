@@ -252,7 +252,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   async function exportBytes(ocr?: Record<string, OcrLine[]>): Promise<Uint8Array> {
     exportWarnings.current = [];
     return runExport(
-      { base: doc!.baseBytes, ops: effectiveOps(useEditor.getState()), external: doc!.extBytes, ...(ocr ? { ocr } : {}) },
+      { base: doc!.baseBytes, ops: effectiveOps(useEditor.getState()), external: doc!.extBytes, fileName: doc!.file.name, ...(ocr ? { ocr } : {}) },
       { onWarning: (w) => exportWarnings.current.push(w) },
     );
   }
@@ -477,7 +477,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
                 {model.pages.map((p, i) => (
                   <div key={p.ref} id={`page-${p.ref}`} className="flex flex-col items-center gap-1.5">
                     <PageView entry={p} label={`Page ${i + 1}`} scale={zoom} interactive annotations={model.annotations.filter((a) => a.page === p.ref)}
-                      stamps={model.stamps} pageNo={i + 1} pageCount={model.pages.length} />
+                      stamps={model.stamps} pageNo={i + 1} pageCount={model.pages.length} fileName={doc.file.name} />
                     <div className="flex items-center gap-1 text-xs text-zinc-500">
                       <button type="button" className="btn-ghost min-h-8 px-1.5" title="Rotate left" aria-label={`Rotate page ${i + 1} left`}
                         onClick={() => useEditor.getState().apply({ op: "page.rotate", page: p.ref, degrees: 270 })}><IconRotateL size={16} /></button>
@@ -515,7 +515,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
             }}
           />
         )}
-        {dialog === "stamps" && <StampsDialog model={model} onClose={() => setDialog(null)} />}
+        {dialog === "stamps" && <StampsDialog model={model} fileName={doc.file.name} onClose={() => setDialog(null)} />}
         {dialog === "share" && <ShareDialog fileId={fileId} fileName={doc.file.name} isGuest={isGuest} hasUnsaved={unsaved > 0} onClose={() => setDialog(null)} />}
         {dialog === "history" && (
           <HistoryDrawer

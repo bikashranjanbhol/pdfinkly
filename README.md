@@ -93,6 +93,9 @@ on export in the page's visual frame, so they read upright on rotated pages
 - **Watermark:** text and/or a logo; size, colour, opacity, angle; once in the middle or repeated across the
   page; on top of the content or behind it (drawn into its own content stream placed first); all pages or a
   range like `1-3, 6`. Text uses Helvetica, so only Latin characters for now (others are dropped, with a warning).
+- **Page numbers, headers and footers:** three slots at the top and three at the bottom, with `{page}`,
+  `{pages}`, `{date}` (DD/MM/YYYY) and `{file}`; a page-number shortcut (position + format); font, size,
+  colour, margin; a first number and a page range (e.g. `2-` to skip a cover page, numbering from 1).
 
 ## Redaction
 

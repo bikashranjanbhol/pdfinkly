@@ -81,7 +81,7 @@ export function Toolbar({ onNeedSignature, onOpenStamps, stampCount = 0, pageLab
       {mode === "edit" && (
         <>
           <span className="h-8 w-px bg-zinc-200" />
-          <button type="button" onClick={onOpenStamps} title="Watermark on every page"
+          <button type="button" onClick={onOpenStamps} title="Watermark, page numbers, headers and footers"
             className="relative flex h-[52px] min-w-14 flex-col items-center justify-center gap-0.5 rounded-[10px] px-1.5 text-zinc-700 hover:bg-zinc-100">
             <IconStamp size={20} />
             <span className="text-[11px] font-semibold">Stamps</span>

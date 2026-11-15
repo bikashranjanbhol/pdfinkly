@@ -46,3 +46,26 @@ export function startFor(cx: number, cy: number, w: number, h: number, angle: nu
   const c = Math.cos(t), s = Math.sin(t);
   return [cx - (c * w) / 2 + (s * h) / 2, cy - (s * w) / 2 - (c * h) / 2];
 }
+
+/** Fill a header/footer slot's tokens for one page. */
+export function fillSlot(template: string, v: { page: number; pages: number; date: string; file: string }): string {
+  return template
+    .replace(/\{page\}/g, String(v.page))
+    .replace(/\{pages\}/g, String(v.pages))
+    .replace(/\{date\}/g, v.date)
+    .replace(/\{file\}/g, v.file);
+}
+
+/** Today's date as people in India write it: 15/11/2026. */
+export const stampDate = (d = new Date()) =>
+  `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+
+/**
+ * Baseline start of a margin text of width w: slot 0/1/2 = left/centre/right,
+ * top or bottom, `margin` from the edges (visual y-up frame).
+ */
+export function slotStart(slot: number, top: boolean, W: number, H: number, w: number, size: number, margin: number): [number, number] {
+  const x = slot === 0 ? margin : slot === 1 ? (W - w) / 2 : W - margin - w;
+  const y = top ? H - margin - size * 0.72 : margin;
+  return [x, y];
+}
