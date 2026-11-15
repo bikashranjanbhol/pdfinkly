@@ -18,7 +18,8 @@ import fontkit from "@pdf-lib/fontkit";
 import { faceFile, layoutReplaceLines } from "./fonts";
 export { layoutReplaceLines } from "./fonts";
 import { deriveModel, type Annotation, type DocModel, type Face, type FontName, type Operation, type PageEntry, type Rect } from "./operations";
-import { removeTextFromPage } from "./pdftext";
+import { drawOcrLayer, type OcrLine } from "./ocr";
+import { removeTextFromPageDetailed } from "./pdftext";
 
 export interface ExportInput {
   /** Bytes of the base version the operations were made against. */
@@ -30,6 +31,8 @@ export interface ExportInput {
   loadFont?: (file: string) => Promise<Uint8Array>;
   /** Called when edited text couldn't be removed from the file and was covered instead. */
   onWarning?: (message: string) => void;
+  /** Recognised text to add as an invisible, searchable layer, keyed by page ref. */
+  ocr?: Record<string, OcrLine[]>;
 }
 
 export class ExportError extends Error {
@@ -156,19 +159,23 @@ type ReplaceAnnot = Extract<Annotation, { kind: "replace" }>;
  * source pages. Returns the ids of edits whose text couldn't be found in the
  * page's own content (e.g. it sits in a Form XObject) — those get covered.
  */
-function removeEditedText(doc: PDFDocument, entries: Array<{ index: number; annots: Placed[] }>): Set<string> {
+function removeEditedText(doc: PDFDocument, entries: Array<{ index: number; annots: Placed[] }>, scanned: Set<string>): Set<string> {
   const incomplete = new Set<string>();
   for (const { index, annots } of entries) {
     const groups = annots.map((a) => ({ id: a.id, rects: (a.annot as ReplaceAnnot).cover }));
     let removed: Record<string, number> = {};
+    let invisible: Record<string, number> = {};
     try {
-      removed = removeTextFromPage(doc, doc.getPage(index), groups);
+      ({ removed, invisible } = removeTextFromPageDetailed(doc, doc.getPage(index), groups));
     } catch {
       removed = {};
     }
     for (const a of annots) {
       const expected = (a.annot as ReplaceAnnot).original.replace(/\s/g, "").length;
-      if ((removed[a.id] ?? 0) < Math.max(1, Math.floor(expected * 0.5))) incomplete.add(a.id);
+      const got = removed[a.id] ?? 0;
+      if (got < Math.max(1, Math.floor(expected * 0.5))) incomplete.add(a.id);
+      // OCR text is invisible: the words you see are pixels of the scan, so cover them.
+      else if ((invisible[a.id] ?? 0) * 2 >= got) scanned.add(a.id);
     }
   }
   return incomplete;
@@ -186,12 +193,13 @@ function replaceTargets(model: DocModel, match: (src: PageEntry["source"]) => nu
   return [...byIndex].map(([index, annots]) => ({ index, annots }));
 }
 
-export async function exportPdf({ base, ops, external = {}, loadFont, onWarning }: ExportInput): Promise<Uint8Array> {
+export async function exportPdf({ base, ops, external = {}, loadFont, onWarning, ocr }: ExportInput): Promise<Uint8Array> {
   const src = await load(base);
   const model = deriveModel(src.getPageCount(), ops);
   const hasForm = applyForm(src, model.form);
   // Edited text: remove originals from the source pages before they're copied anywhere.
-  const incomplete = removeEditedText(src, replaceTargets(model, (s) => (s.kind === "base" ? s.index : null)));
+  const scanned = new Set<string>();
+  const incomplete = removeEditedText(src, replaceTargets(model, (s) => (s.kind === "base" ? s.index : null)), scanned);
 
   let out: PDFDocument;
   const pagesByRef = new Map<string, PDFPage>();
@@ -217,7 +225,7 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning 
       const bytes = external[versionId];
       if (!bytes) throw new ExportError("MISSING_EXTERNAL", `Missing merged file ${versionId}`);
       const extDoc = await load(bytes);
-      for (const id of removeEditedText(extDoc, replaceTargets(model, (s) => (s.kind === "ext" && s.versionId === versionId ? s.index : null)))) incomplete.add(id);
+      for (const id of removeEditedText(extDoc, replaceTargets(model, (s) => (s.kind === "ext" && s.versionId === versionId ? s.index : null)), scanned)) incomplete.add(id);
       const idx = model.pages.flatMap((p) => (p.source.kind === "ext" && p.source.versionId === versionId ? [p.source.index] : []));
       const copies = await out.copyPages(extDoc, idx);
       copies.forEach((p, i) => extCopies.set(`${versionId}:${idx[i]}`, p));
@@ -275,11 +283,17 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning 
     const page = pagesByRef.get(ref);
     if (!page) continue;
     if (annot.kind === "replace") {
-      await drawReplace(page, annot, incomplete.has(id), faceFont);
+      await drawReplace(page, annot, incomplete.has(id) || scanned.has(id), faceFont);
       continue;
     }
     const rot = page.getRotation().angle % 360;
     await drawAnnotation(page, annot, rot, font, image);
+  }
+  if (ocr) {
+    for (const [ref, lines] of Object.entries(ocr)) {
+      const page = pagesByRef.get(ref);
+      if (page && lines.length) drawOcrLayer(out, page, lines);
+    }
   }
   if (incomplete.size) {
     onWarning?.(
@@ -300,7 +314,8 @@ const STANDARD_FACES = {
 
 async function drawReplace(page: PDFPage, a: ReplaceAnnot, cover: boolean, faceFont: (f: Face, b: boolean, i: boolean) => Promise<PDFFont>) {
   if (cover) {
-    for (const r of a.cover) page.drawRectangle({ x: r.x, y: r.y, width: r.w, height: r.h, color: hex(a.bg) });
+    const pad = 0.6; // same as the editor preview
+    for (const r of a.cover) page.drawRectangle({ x: r.x - pad, y: r.y - pad, width: r.w + pad * 2, height: r.h + pad * 2, color: hex(a.bg) });
   }
   const font = await faceFont(a.face, a.bold, a.italic);
   const text = sanitize(a.text, font);

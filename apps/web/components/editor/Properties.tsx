@@ -1,6 +1,6 @@
 "use client";
 
-import { describeFont, matchFont, newId, type Annotation, type Face, type PlacedAnnotation } from "@pdfinkly/shared";
+import { describeFont, matchFont, newId, OCR_FONT_NAME, type Annotation, type Face, type PlacedAnnotation } from "@pdfinkly/shared";
 import { describe, translate } from "./annotations";
 import { useEditor } from "./store";
 import { toolHint } from "./Toolbar";
@@ -81,13 +81,23 @@ export function Properties({ annotations }: { annotations: PlacedAnnotation[] })
           {sel.annot.kind === "replace" && (() => {
             const a = sel.annot;
             const orig = matchFont(a.srcFont);
-            const substituted = orig.face !== a.face || orig.family.toLowerCase().replace(/\s/g, "") !== a.face.toLowerCase();
+            const ocr = a.srcFont === OCR_FONT_NAME;
+            const substituted = !ocr && (orig.face !== a.face || orig.family.toLowerCase().replace(/\s/g, "") !== a.face.toLowerCase());
             return (
               <>
                 <div className="rounded-[10px] border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px]">
                   <div className="text-zinc-500">Font in the PDF</div>
-                  <div className="font-semibold text-ink">{describeFont(a.srcFont, a.size)}</div>
-                  <div className="text-zinc-500">{orig.subset ? "Embedded (only the characters used)" : "Embedded or standard font"}</div>
+                  {ocr ? (
+                    <>
+                      <div className="font-semibold text-ink">Recognised text (OCR) · ~{Math.round(a.size)} pt</div>
+                      <p className="mt-1 text-zinc-600">This page is a scan, so its real font isn&apos;t known. The edited words are drawn in <b>{FACE_LABEL[a.face]}</b> over the paper colour; pick the closest typeface below.</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-semibold text-ink">{describeFont(a.srcFont, a.size)}</div>
+                      <div className="text-zinc-500">{orig.subset ? "Embedded (only the characters used)" : "Embedded or standard font"}</div>
+                    </>
+                  )}
                   {substituted && (
                     <p className="mt-1.5 text-zinc-600">Redrawn with <b>{FACE_LABEL[a.face]}</b>{METRIC_TWIN[a.face] && orig.family.toLowerCase().includes(METRIC_TWIN[a.face]!.toLowerCase()) ? ", which has identical letter widths" : ", the closest available match"}.</p>
                   )}

@@ -195,9 +195,14 @@ export function fontResolverFor(page: PDFPage): FontResolver {
  * content stream. Returns glyphs removed per group id.
  */
 export function removeTextFromPage(doc: PDFDocument, page: PDFPage, groups: RemovalGroup[]): Record<string, number> {
-  if (groups.length === 0) return {};
+  return removeTextFromPageDetailed(doc, page, groups).removed;
+}
+
+/** Like removeTextFromPage, also reporting how many removed glyphs were invisible (OCR text). */
+export function removeTextFromPageDetailed(doc: PDFDocument, page: PDFPage, groups: RemovalGroup[]) {
+  if (groups.length === 0) return { removed: {} as Record<string, number>, invisible: {} as Record<string, number> };
   const src = pageContent(page);
-  const { bytes, removed } = removeGlyphs(src, fontResolverFor(page), groups);
+  const { bytes, removed, invisible } = removeGlyphs(src, fontResolverFor(page), groups);
   if (bytes) setPageContent(doc, page, bytes);
-  return removed;
+  return { removed, invisible };
 }

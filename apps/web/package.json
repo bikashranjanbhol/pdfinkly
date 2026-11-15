@@ -20,6 +20,8 @@
     "@fontsource/carlito": "5.3.0",
     "@pdfinkly/db": "workspace:*",
     "@pdfinkly/shared": "workspace:*",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/hin": "1.0.0",
     "@vercel/blob": "2.9.0",
     "drizzle-orm": "^0.45.4",
     "next": "16.4.6",
@@ -29,6 +31,7 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "server-only": "^0.0.1",
+    "tesseract.js": "7.0.0",
     "zod": "^4.6.7",
     "zustand": "^5.1.0"
   },

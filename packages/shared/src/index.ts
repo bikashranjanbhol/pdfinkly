@@ -82,3 +82,4 @@ export interface UploadTicket {
   expiresAt: string;
 }
 export * from "./fonts";
+export * from "./ocrTypes";

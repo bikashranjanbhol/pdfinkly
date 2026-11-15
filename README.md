@@ -46,9 +46,34 @@ The **Edit text** tool works on text that's already in the PDF, not just text yo
   Helvetica for Arial and other sans fonts, Times for serif fonts, Courier for monospace.
 - **Tested producers:** Chrome, LibreOffice/Word-style TrueType, pdfLaTeX (Type 1, kerned), wkhtmltopdf.
 
-Limits: scanned pages need OCR first; rotated text and text inside Form XObjects isn't removed (it's covered
+Limits: scanned pages need OCR first (below); rotated text and text inside Form XObjects isn't removed (it's covered
 and the user is warned); Hindi and other complex scripts aren't supported for redrawing yet; a paragraph
 re-wraps inside its own box but doesn't push the content below it down.
+
+## OCR (scanned PDFs)
+
+**Recognise text** (editor header, or the hint shown when a PDF looks scanned) turns scanned pages into
+searchable, copyable and editable text. It runs entirely in the browser, so the file never leaves the device
+for OCR and there is no server cost.
+
+- **Engine.** tesseract.js 7 (WebAssembly, LSTM) with the `best_int` English and Hindi models. Everything is
+  self-hosted: `scripts/copy-pdf-worker.mjs` copies the worker, the core builds and the models into
+  `public/tesseract` and `public/tessdata` at install time, so no CDN is involved. Models download once
+  (about 3 MB English and 1.4 MB Hindi, gzipped) plus a ~4 MB engine, and are cached by the browser.
+- **Scope and languages.** By default only pages without a text layer are recognised; "All pages" is available.
+  English, Hindi, or both; the choice is remembered.
+- **Accuracy.** Each page is rendered at the scan's own resolution (200–400 dpi) and despeckled. Low-confidence
+  stray punctuation is dropped, and words on a slightly skewed line are snapped onto one baseline.
+- **Output.** Saving writes a new version with an invisible text layer (render mode 3) under the scan, drawn
+  with a glyphless Type0 font (`PDFInkly-OCR`, Identity-H, identity ToUnicode). Any script, Devanagari
+  included, is therefore searchable and copyable in every viewer, and each word is stretched to the width of
+  the word in the image so selections line up.
+- **Editing recognised text.** Edit text works on OCR text: the old words are removed from the text layer,
+  the scan underneath is covered in the sampled paper colour, and the new text is drawn in Helvetica (the real
+  font of a scan is unknown).
+
+Limits: about 2–3 s per page on a laptop; handwriting, tables and very low-quality scans recognise poorly;
+recognised Hindi is searchable and copyable but can't be edited yet.
 
 ## Repository layout
 
@@ -104,6 +129,7 @@ pnpm typecheck
 BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smoke-test.mjs   # 20 API checks
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
 python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
+python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
 ```
 
 The UI test uploads a PDF, adds a highlight, text, a drawing and a signature, checks autosave, undo/redo and
@@ -140,5 +166,5 @@ Plan limits live in the `plans` table, so they can change without a deploy. The 
 
 ## Next phases
 
-- **Phase 2**: worker service (compress, OCR, Office ↔ PDF) with a job queue, as described in the LLD.
+- **Phase 2**: worker service (compress, Office ↔ PDF, server-side OCR for very large files) with a job queue, as described in the LLD.
 - **Phase 3**: billing, true redaction, team workspaces.

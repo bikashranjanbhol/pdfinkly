@@ -33,6 +33,8 @@ interface EditorState {
   pendingImage: { dataUrl: string; w: number; h: number } | null;
   style: Style;
   zoom: number;
+  /** Bumped to ask the editor to open the OCR dialog. */
+  ocrRequest: number;
 
   reset(ops: Operation[], revision: number): void;
   apply(...ops: Operation[]): void;
@@ -45,6 +47,7 @@ interface EditorState {
   setPendingImage(p: EditorState["pendingImage"]): void;
   setStyle(p: Partial<Style>): void;
   setZoom(z: number): void;
+  requestOcr(): void;
   setSave(s: SaveState, extra?: Partial<Pick<EditorState, "revision" | "conflictServer">>): void;
 }
 
@@ -61,6 +64,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   pendingImage: null,
   style: { color: "#18181B", stroke: "#DC2626", highlight: "#FACC15", width: 2, font: "Helvetica", size: 12 },
   zoom: 1,
+  ocrRequest: 0,
 
   reset: (ops, revision) =>
     set({ ops, cursor: ops.length, revision, saveState: "idle", conflictServer: null, selected: null, editingText: null }),
@@ -84,6 +88,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   setPendingImage: (pendingImage) => set({ pendingImage }),
   setStyle: (p) => set({ style: { ...get().style, ...p } }),
   setZoom: (zoom) => set({ zoom: Math.min(3, Math.max(0.4, Math.round(zoom * 100) / 100)) }),
+  requestOcr: () => set((s) => ({ ocrRequest: s.ocrRequest + 1 })),
   setSave: (saveState, extra) => set({ saveState, ...extra }),
 }));
 

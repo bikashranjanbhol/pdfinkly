@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { describeFont, FACE_METRICS, matchFont, newId, type Annotation, type PageEntry, type PlacedAnnotation, type Rect } from "@pdfinkly/shared";
+import { describeFont, FACE_METRICS, matchFont, newId, OCR_FONT_NAME, type Annotation, type PageEntry, type PlacedAnnotation, type Rect } from "@pdfinkly/shared";
 import { boundsOf, FACE_CSS, hasRect, HtmlAnnotation, ShapeSvg, translate, FONT_CSS } from "./annotations";
 import { sampleColors, textBlocks, type TextBlock } from "./textBlocks";
 import { cssToRect, makeGeom, rectToCss, round, toPdf, type PageGeom } from "./geometry";
@@ -155,7 +155,11 @@ export function PageView({
     if (!g) return;
     const canvas = wrap.current?.querySelector("canvas") ?? null;
     const colors = canvas ? sampleColors(canvas, rectToCss(g, block.rect), g.width) : { fg: "#000000", bg: "#FFFFFF" };
-    const m = matchFont(block.font.raw, { serif: block.font.serif, mono: block.font.mono });
+    if (!editableScript(block.text)) return;
+    // OCR text's font is unknown (its glyphless font even looks monospaced to PDF.js): use a neutral sans.
+    const m = block.font.raw === OCR_FONT_NAME
+      ? { face: "Helvetica" as const, bold: false, italic: false }
+      : matchFont(block.font.raw, { serif: block.font.serif, mono: block.font.mono });
     const id = add({
       kind: "replace",
       rect: block.rect,
@@ -370,13 +374,15 @@ export function PageView({
           {blocks?.filter((b) => !shown.some((p) => p.annot.kind === "replace" && overlaps(p.annot.cover, b.cover))).map((b) => {
             const c = rectToCss(g, b.rect);
             const hot = hoverBlock === b.key;
+            const editable = editableScript(b.text);
             return (
               <div
                 key={b.key}
                 role="button"
                 tabIndex={0}
                 aria-label={`Edit text: ${b.text.slice(0, 60)} (${describeFont(b.font.raw, b.size, b.font)})`}
-                className={`absolute cursor-text rounded-[2px] ${hot ? "outline outline-[1.5px] outline-brand-600" : "outline-dashed outline-1 outline-brand-600/25"}`}
+                aria-disabled={!editable || undefined}
+                className={`absolute rounded-[2px] ${editable ? "cursor-text" : "cursor-not-allowed"} ${hot ? (editable ? "outline outline-[1.5px] outline-brand-600" : "outline outline-[1.5px] outline-zinc-400") : "outline-dashed outline-1 outline-brand-600/25"}`}
                 style={{ left: c.left - 2, top: c.top - 2, width: c.width + 4, height: c.height + 4 }}
                 onPointerEnter={() => setHoverBlock(b.key)}
                 onPointerLeave={() => setHoverBlock((k) => (k === b.key ? null : k))}
@@ -385,7 +391,7 @@ export function PageView({
                 onClick={() => startEdit(b)}
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), startEdit(b))}
               >
-                {hot && <FontChip block={b} />}
+                {hot && <FontChip block={b} editable={editable} />}
               </div>
             );
           })}
@@ -404,8 +410,10 @@ export function PageView({
             <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-zinc-900/80 px-2 py-1 text-xs text-white">Finding text…</div>
           )}
           {blocks !== null && blocks.length === 0 && (
-            <div className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit max-w-[90%] rounded-lg bg-zinc-900/85 px-3 py-2 text-center text-[13px] text-white">
-              No editable text on this page. If it&apos;s a scan, the text is part of an image.
+            <div className="absolute inset-x-0 top-3 z-10 mx-auto flex w-fit max-w-[90%] flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg bg-zinc-900/90 px-3 py-2 text-center text-[13px] text-white">
+              <span>No text on this page. If it&apos;s a scan, the text is part of an image.</span>
+              <button type="button" className="rounded-md bg-white px-2.5 py-1 text-[13px] font-semibold text-ink" onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => useEditor.getState().requestOcr()}>Recognise text</button>
             </div>
           )}
         </>
@@ -489,13 +497,22 @@ const freshReplace = new Set<string>();
 const overlaps = (a: Rect[], b: Rect[]) =>
   a.some((r) => b.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h));
 
-function FontChip({ block }: { block: TextBlock }) {
+/**
+ * Edited text is redrawn with Latin fonts; scripts that need shaping (Devanagari and
+ * other Indic scripts, Arabic, Hebrew, Thai) can't be redrawn correctly yet.
+ */
+const editableScript = (text: string) => !/[\u0590-\u08FF\u0900-\u0DFF\u0E00-\u0E7F]/.test(text);
+
+function FontChip({ block, editable }: { block: TextBlock; editable: boolean }) {
   const m = matchFont(block.font.raw, block.font);
-  const detail = !block.font.embedded ? "not embedded" : m.subset ? "embedded (partial)" : "embedded";
+  const ocr = block.font.raw === OCR_FONT_NAME;
+  const detail = !editable
+    ? "editing Hindi and other non-Latin scripts isn't supported yet"
+    : `${ocr ? "from a scan" : !block.font.embedded ? "not embedded" : m.subset ? "embedded (partial)" : "embedded"} · click to edit`;
   return (
     <div className="pointer-events-none absolute bottom-full left-0 z-10 mb-1.5 flex w-max max-w-[320px] flex-col rounded-lg bg-zinc-900 px-2.5 py-1.5 text-left text-xs leading-snug text-white shadow-lg">
-      <span className="font-semibold">{describeFont(block.font.raw, block.size, block.font)}</span>
-      <span className="text-zinc-300">{detail} · click to edit</span>
+      <span className="font-semibold">{ocr ? `Recognised text (OCR) · ~${Math.round(block.size)} pt` : describeFont(block.font.raw, block.size, block.font)}</span>
+      <span className="text-zinc-300">{detail}</span>
     </div>
   );
 }

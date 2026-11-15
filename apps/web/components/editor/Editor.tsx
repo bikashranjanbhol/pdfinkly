@@ -15,7 +15,10 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deriveModel, newId, OperationsSchema, type FileSummary, type Operation } from "@pdfinkly/shared";
 import { api, ApiFailure, saveBytes } from "@/lib/client/api";
 import { fetchBytes, openPdf, uploadNewPdf, uploadNewVersion } from "@/lib/client/pdf";
-import { IconBack, IconCheck, IconDownload, IconHistory, IconShare } from "../icons";
+import type { OcrLine } from "@pdfinkly/shared";
+import { looksScanned } from "@/lib/client/ocr";
+import { IconBack, IconCheck, IconDownload, IconHistory, IconScan, IconShare } from "../icons";
+import { OcrDialog, type OcrPageRef } from "./OcrDialog";
 import { Mark } from "../Logo";
 import { runExport } from "./exportClient";
 import { makeGeom } from "./geometry";
@@ -62,7 +65,10 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "export" | "save" | "merge">(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "share" | "history" | "signature">(null);
+  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr">(null);
+  const [scanHint, setScanHint] = useState(false);
+  const ocrRequest = useEditor((s) => s.ocrRequest);
+  useEffect(() => { if (ocrRequest) setDialog("ocr"); }, [ocrRequest]);
   const [renaming, setRenaming] = useState(false);
   const savingVersion = useRef(false);
   const mergeInput = useRef<HTMLInputElement>(null);
@@ -79,6 +85,37 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
 
   const eff = useMemo(() => effectiveOps({ ops, cursor }), [ops, cursor]);
   const model = useMemo(() => (doc ? deriveModel(doc.base.numPages, eff) : null), [doc, eff]);
+  const savingOcr = useRef(false);
+
+  // Pages the OCR dialog can work on (blank inserted pages have nothing to read).
+  const pageKey = model?.pages.map((p) => p.ref).join("|") ?? "";
+  const ocrPages = useMemo<OcrPageRef[]>(() => {
+    if (!doc || !model) return [];
+    return model.pages.flatMap((p, i) => {
+      const src = p.source;
+      if (src.kind === "blank") return [];
+      const pdf = src.kind === "base" ? doc.base : doc.ext[src.versionId];
+      if (!pdf) return [];
+      return [{ ref: p.ref, label: `Page ${i + 1}`, load: () => pdf.getPage(src.index + 1) }];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, pageKey]);
+
+  // Suggest OCR when the first pages have no text layer.
+  useEffect(() => {
+    let cancelled = false;
+    setScanHint(false);
+    (async () => {
+      const sample = ocrPages.slice(0, 3);
+      if (sample.length === 0) return;
+      for (const p of sample) {
+        const page = await p.load().catch(() => null);
+        if (!page || !(await looksScanned(page).catch(() => false))) return;
+      }
+      if (!cancelled) setScanHint(true);
+    })();
+    return () => { cancelled = true; };
+  }, [ocrPages]);
 
   /* ------------------------------------------------------------ loading */
   const load = useCallback(async () => {
@@ -210,10 +247,10 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
 
   /* ------------------------------------------------------------ actions */
   const exportWarnings = useRef<string[]>([]);
-  async function exportBytes(): Promise<Uint8Array> {
+  async function exportBytes(ocr?: Record<string, OcrLine[]>): Promise<Uint8Array> {
     exportWarnings.current = [];
     return runExport(
-      { base: doc!.baseBytes, ops: effectiveOps(useEditor.getState()), external: doc!.extBytes },
+      { base: doc!.baseBytes, ops: effectiveOps(useEditor.getState()), external: doc!.extBytes, ...(ocr ? { ocr } : {}) },
       { onWarning: (w) => exportWarnings.current.push(w) },
     );
   }
@@ -237,21 +274,22 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
     }
   }
 
-  async function saveVersion() {
+  async function saveVersion(ocr?: { result: Record<string, OcrLine[]>; message: string }) {
     if (!doc || !model) return;
     const current = effectiveOps(useEditor.getState());
-    if (current.length === 0) {
+    if (current.length === 0 && !ocr) {
       setNotice("Nothing to save yet. Your file is already up to date.");
       return;
     }
     savingVersion.current = true;
     setBusy("save");
     try {
-      const bytes = await exportBytes();
+      const bytes = await exportBytes(ocr?.result);
       await uploadNewVersion(fileId, bytes, doc.baseVersionId, model.pages.length);
       useEditor.getState().reset([], 0);
       await load();
-      setNotice(withWarnings("Saved as a new version."));
+      setNotice(withWarnings(ocr?.message ?? "Saved as a new version."));
+      if (ocr) setScanHint(false);
     } catch (e) {
       setNotice(e instanceof ApiFailure ? e.message : e instanceof Error ? `Couldn't save: ${e.message}` : "Couldn't save.");
     } finally {
@@ -363,6 +401,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
               {tab("edit", "Edit")}{tab("organize", "Organize pages")}{tab("sign", "Fill and sign")}
             </nav>
             <div className="flex flex-[1_1_280px] items-center justify-end gap-2">
+              <button type="button" className="btn-secondary min-h-10 px-3 text-sm" disabled={!!busy} onClick={() => setDialog("ocr")} title="Recognise text in scanned pages (OCR)"><IconScan size={18} />Recognise text</button>
               <button type="button" className="btn-secondary min-h-10 px-3 text-sm" onClick={() => setDialog("history")}><IconHistory size={18} />History</button>
               <button type="button" className="btn-secondary min-h-10 px-3 text-sm" onClick={() => setDialog("share")}><IconShare size={18} />Share</button>
               <button type="button" aria-label="Download PDF" title="Download PDF" disabled={!!busy} className="btn-secondary min-h-10 px-2.5" onClick={() => void download()}>
@@ -388,6 +427,15 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
             <button type="button" aria-label="Dismiss" className="btn-ghost min-h-8 px-2" onClick={() => setNotice(null)}>×</button>
           </div>
         )}
+        {scanHint && !notice && (
+          <div role="status" className="flex flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-amber-950">
+            <IconScan size={18} />
+            <span className="flex-1 text-sm">This PDF looks scanned, so its text can&apos;t be searched, copied or edited yet.</span>
+            <button type="button" className="btn-primary min-h-9 text-sm" onClick={() => setDialog("ocr")}>Recognise text</button>
+            <button type="button" aria-label="Dismiss" className="btn-ghost min-h-8 px-2" onClick={() => setScanHint(false)}>×</button>
+          </div>
+        )}
+        {busy === "save" && savingOcr.current && <div role="status" className="bg-brand-600 px-4 py-1 text-center text-xs text-white">Adding the recognised text and saving a new version…</div>}
         {busy === "export" && <div role="status" className="bg-brand-600 px-4 py-1 text-center text-xs text-white">Preparing your PDF…</div>}
 
         {mode !== "organize" && <Toolbar onNeedSignature={() => setDialog("signature")} pageLabel={`${model.pages.length} page${model.pages.length > 1 ? "s" : ""}`} />}
@@ -415,6 +463,21 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
         <input ref={mergeInput} type="file" accept="application/pdf,.pdf" className="sr-only" tabIndex={-1} aria-hidden="true"
           onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void addFromPdf(f); }} />
 
+        {dialog === "ocr" && (
+          <OcrDialog
+            pages={ocrPages}
+            unsaved={unsaved}
+            onClose={() => setDialog(null)}
+            onRecognised={(result, stats) => {
+              setDialog(null);
+              savingOcr.current = true;
+              void saveVersion({
+                result,
+                message: `Recognised ${stats.words.toLocaleString()} words on ${stats.pages} page${stats.pages > 1 ? "s" : ""} and saved a new version. You can now search, copy and edit the text (Edit text tool).`,
+              }).finally(() => { savingOcr.current = false; });
+            }}
+          />
+        )}
         {dialog === "share" && <ShareDialog fileId={fileId} fileName={doc.file.name} isGuest={isGuest} hasUnsaved={unsaved > 0} onClose={() => setDialog(null)} />}
         {dialog === "history" && (
           <HistoryDrawer

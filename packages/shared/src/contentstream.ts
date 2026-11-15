@@ -215,7 +215,7 @@ export interface Glyph {
   code: number;
 }
 
-interface TextState { Tc: number; Tw: number; Th: number; TL: number; Ts: number; font: string | null; size: number }
+interface TextState { Tc: number; Tw: number; Th: number; TL: number; Ts: number; Tr: number; font: string | null; size: number }
 
 /**
  * Walk the content stream, calling `onShow` for every text-showing op with the
@@ -223,7 +223,7 @@ interface TextState { Tc: number; Tw: number; Th: number; TL: number; Ts: number
  */
 function interpret(ops: Op[], fonts: FontResolver, onShow: (opIndex: number, glyphs: Array<{ code: number; bytes: Uint8Array; cx: number; cy: number; adv: number; isSpace: boolean; seg: number }>, ts: TextState, metrics: FontMetrics | null) => void) {
   let ctm: M = [...ID];
-  let ts: TextState = { Tc: 0, Tw: 0, Th: 1, TL: 0, Ts: 0, font: null, size: 0 };
+  let ts: TextState = { Tc: 0, Tw: 0, Th: 1, TL: 0, Ts: 0, Tr: 0, font: null, size: 0 };
   const stack: Array<{ ctm: M; ts: TextState }> = [];
   let Tm: M = [...ID];
   let Tlm: M = [...ID];
@@ -271,6 +271,7 @@ function interpret(ops: Op[], fonts: FontResolver, onShow: (opIndex: number, gly
       case "Tz": ts.Th = num(a[0]) / 100; break;
       case "TL": ts.TL = num(a[0]); break;
       case "Ts": ts.Ts = num(a[0]); break;
+      case "Tr": ts.Tr = num(a[0]); break;
       case "Tf": ts.font = a[0]?.t === "name" ? a[0].v : null; ts.size = num(a[1]); break;
       case "Td": Tlm = mul([1, 0, 0, 1, num(a[0]), num(a[1])], Tlm); Tm = [...Tlm]; break;
       case "TD": ts.TL = -num(a[1]); Tlm = mul([1, 0, 0, 1, num(a[0]), num(a[1])], Tlm); Tm = [...Tlm]; break;
@@ -302,9 +303,11 @@ export interface RemovalGroup { id: string; rects: Box[] }
  * per group, so callers can tell when some text couldn't be found (e.g. it
  * lives in a Form XObject) and fall back to covering it.
  */
-export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: RemovalGroup[], tol = 0.75): { bytes: Uint8Array | null; removed: Record<string, number> } {
+export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: RemovalGroup[], tol = 0.75): { bytes: Uint8Array | null; removed: Record<string, number>; invisible: Record<string, number> } {
   const ops = parseContent(src);
   const removed: Record<string, number> = Object.fromEntries(groups.map((g) => [g.id, 0]));
+  /** Removed glyphs that were invisible (render mode 3: an OCR layer over a scanned image). */
+  const invisible: Record<string, number> = Object.fromEntries(groups.map((g) => [g.id, 0]));
   const rewrites = new Map<number, Uint8Array>();
 
   interpret(ops, fonts, (opIndex, glyphs, ts, metrics) => {
@@ -314,7 +317,11 @@ export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: Remov
       return null;
     });
     if (hit.every((h) => h === null)) return;
-    for (const h of hit) if (h) removed[h] = (removed[h] ?? 0) + 1;
+    for (const h of hit) {
+      if (!h) continue;
+      removed[h] = (removed[h] ?? 0) + 1;
+      if (ts.Tr === 3 || ts.Tr === 7) invisible[h] = (invisible[h] ?? 0) + 1;
+    }
 
     // Rebuild as one TJ array: kept glyphs stay as strings, removed glyphs and
     // original kerning numbers become numeric adjustments.
@@ -351,7 +358,7 @@ export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: Remov
     rewrites.set(opIndex, new TextEncoder().encode(text));
   });
 
-  if (rewrites.size === 0) return { bytes: null, removed };
+  if (rewrites.size === 0) return { bytes: null, removed, invisible };
   const chunks: Uint8Array[] = [];
   let pos = 0;
   ops.forEach((o, idx) => {
@@ -365,7 +372,7 @@ export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: Remov
   const out = new Uint8Array(total);
   let off = 0;
   for (const c of chunks) { out.set(c, off); off += c.length; }
-  return { bytes: out, removed };
+  return { bytes: out, removed, invisible };
 }
 
 const fmt = (v: number) => {

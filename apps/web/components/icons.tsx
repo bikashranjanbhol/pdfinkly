@@ -18,6 +18,7 @@ export const IconUndo = make("M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3");
 export const IconRedo = make("M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3");
 export const IconSelect = make("M5 3l14 8-6 2-2 6z");
 export const IconText = make("M5 6V4h14v2M12 4v16M9 20h6");
+export const IconScan = make("M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 10h8M8 14h5");
 export const IconEditText = make("M4 7V4h11v3M9.5 4v13M7 17h5M14.5 20.5l6.4-6.4a1.4 1.4 0 0 0-2-2L12.5 18.5 12 21z");
 export const IconHighlight = make("M9 11l-6 6v3h9l3-3M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4");
 export const IconPen = make("M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z");

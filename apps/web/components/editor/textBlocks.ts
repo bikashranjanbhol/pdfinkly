@@ -147,11 +147,15 @@ async function extract(page: PDFPageProxy): Promise<TextBlock[]> {
     const top = first.baseline + ascent * size;
     const bottom = d.lines[d.lines.length - 1]!.baseline - descent * size;
     const f = fonts.get(first.font) ?? null;
+    // OCR text sits over a scanned image whose lines may be slightly tilted: cover a bit more.
+    const ocr = f?.name === "PDFInkly-OCR";
+    const padY = ocr ? size * 0.2 : 0;
+    const padX = ocr ? size * 0.1 : 0;
     return {
       key: `${Math.round(left)}:${Math.round(first.baseline)}`,
       lines: d.lines.map(({ text, x, x1, baseline }) => ({ text, x, x1, baseline })),
       rect: { x: r2(left), y: r2(bottom), w: r2(right - left), h: r2(top - bottom) },
-      cover: d.lines.map((l) => ({ x: r2(l.x), y: r2(l.baseline - descent * size), w: r2(l.x1 - l.x), h: r2((ascent + descent) * size) })),
+      cover: d.lines.map((l) => ({ x: r2(l.x - padX), y: r2(l.baseline - descent * size - padY), w: r2(l.x1 - l.x + padX * 2), h: r2((ascent + descent) * size + padY * 2) })),
       text: d.lines.map((l) => l.text).join("\n"),
       size: r2(size),
       lineHeight: r2(d.gap ?? size * 1.2),
