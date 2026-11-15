@@ -40,6 +40,13 @@ export const AnnotationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("note"), at: PointSchema, text: z.string().max(2000) }),
   z.object({ kind: z.literal("whiteout"), rect: RectSchema }),
   /**
+   * An area to redact: on export everything under `rect` is deleted from the file
+   * (text, drawings, image pixels, annotations) and a black box drawn over it.
+   * `label` names what was found ("Aadhaar", "PAN", …); `text` is the matched
+   * text, used to check the saved file no longer contains it.
+   */
+  z.object({ kind: z.literal("redact"), rect: RectSchema, label: z.string().max(40).optional(), text: z.string().max(200).optional() }),
+  /**
    * Edited text that was already in the PDF. On export the original glyphs under
    * `cover` are deleted from the page's content stream, then `text` is drawn in
    * `rect`, one line per "\n" (wrapped if wider than the box). Lines are placed

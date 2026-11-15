@@ -15,7 +15,7 @@ import { removeGlyphs, type FontMetrics, type FontResolver, type RemovalGroup } 
 
 /* ---------------------------------------------------------- content I/O */
 
-function streamBytes(s: PDFObject | undefined): Uint8Array | null {
+export function streamBytes(s: PDFObject | undefined): Uint8Array | null {
   if (s instanceof PDFRawStream) return decodePDFRawStream(s).decode();
   if (s instanceof PDFStream) {
     const anyS = s as unknown as { getUnencodedContents?: () => Uint8Array; getContents: () => Uint8Array };
@@ -47,9 +47,14 @@ export function pageContent(page: PDFPage): Uint8Array {
   return out;
 }
 
-function setPageContent(doc: PDFDocument, page: PDFPage, bytes: Uint8Array) {
+export function setPageContent(doc: PDFDocument, page: PDFPage, bytes: Uint8Array) {
   const ref = doc.context.register(doc.context.flateStream(bytes));
   page.node.set(PDFName.of("Contents"), ref);
+  // pdf-lib caches the stream it draws into; that stream is no longer in /Contents,
+  // so make the next draw call start a fresh one instead of writing into the void.
+  const cached = page as unknown as { contentStream?: unknown; contentStreamRef?: unknown };
+  cached.contentStream = undefined;
+  cached.contentStreamRef = undefined;
 }
 
 /* --------------------------------------------------------------- fonts */
@@ -170,7 +175,11 @@ function type0Metrics(dict: PDFDict): FontMetrics {
 
 /** Resolve a page's /Font resources to glyph metrics. */
 export function fontResolverFor(page: PDFPage): FontResolver {
-  const resources = page.node.Resources();
+  return fontResolverForResources(page.node.Resources());
+}
+
+/** Resolve the fonts of a resource dictionary (a page's or a form XObject's). */
+export function fontResolverForResources(resources: PDFDict | undefined): FontResolver {
   const fontDict = resources?.lookupMaybe(PDFName.of("Font"), PDFDict);
   const cache = new Map<string, FontMetrics | null>();
   return (name) => {

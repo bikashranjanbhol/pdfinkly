@@ -292,6 +292,7 @@ export function PageView({
     const rect = { x: round(r.x), y: round(r.y), w: round(r.w), h: round(r.h) };
     if (tool === "highlight") add({ kind: "highlight", rect, color: style.highlight });
     else if (tool === "whiteout") add({ kind: "whiteout", rect });
+    else if (tool === "redact") add({ kind: "redact", rect });
     else if (tool === "ellipse") add({ kind: "ellipse", rect, stroke: style.stroke, fill: null, width: style.width });
     else add({ kind: "rect", rect, stroke: style.stroke, fill: null, width: style.width });
   }
@@ -322,8 +323,8 @@ export function PageView({
           tool === "ellipse"
             ? <ellipse cx={(drag.x0 + drag.x1) / 2} cy={(drag.y0 + drag.y1) / 2} rx={Math.abs(drag.x1 - drag.x0) / 2} ry={Math.abs(drag.y1 - drag.y0) / 2} fill="none" stroke={style.stroke} strokeWidth={style.width * g.scale} />
             : <rect x={Math.min(drag.x0, drag.x1)} y={Math.min(drag.y0, drag.y1)} width={Math.abs(drag.x1 - drag.x0)} height={Math.abs(drag.y1 - drag.y0)}
-                fill={tool === "highlight" ? style.highlight : tool === "whiteout" ? "#FFFFFF" : "none"} fillOpacity={tool === "highlight" ? 0.4 : 1}
-                stroke={tool === "highlight" ? "none" : tool === "whiteout" ? "#A1A1AA" : style.stroke} strokeWidth={tool === "whiteout" ? 1 : style.width * g.scale} />
+                fill={tool === "highlight" ? style.highlight : tool === "whiteout" ? "#FFFFFF" : tool === "redact" ? "#18181B" : "none"} fillOpacity={tool === "highlight" ? 0.4 : tool === "redact" ? 0.35 : 1}
+                stroke={tool === "highlight" ? "none" : tool === "whiteout" ? "#A1A1AA" : tool === "redact" ? "#DC2626" : style.stroke} strokeWidth={tool === "whiteout" || tool === "redact" ? 1.5 : style.width * g.scale} />
         )}
         {drag?.kind === "line" && <line x1={drag.x0} y1={drag.y0} x2={drag.x1} y2={drag.y1} stroke={style.stroke} strokeWidth={style.width * g.scale} strokeLinecap="round" />}
         {drag?.kind === "ink" && (

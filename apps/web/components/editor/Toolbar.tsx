@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import {
   IconArrow, IconEllipse, IconEraser, IconHighlight, IconImage, IconNote, IconPen, IconRect, IconRedo,
-  IconEditText, IconSelect, IconSign, IconText, IconUndo,
+  IconEditText, IconRedact, IconSelect, IconSign, IconText, IconUndo,
 } from "../icons";
 import { useEditor, type Tool } from "./store";
 
@@ -20,6 +20,7 @@ const TOOLS: { id: Tool; label: string; Icon: (p: { size?: number }) => React.JS
   { id: "note", label: "Note", Icon: IconNote, hint: "Click to pin a note, then type it in the side panel.", modes: ["edit"] },
   { id: "signature", label: "Sign", Icon: IconSign, hint: "Pick or create a signature, then click where it goes.", modes: ["edit", "sign"] },
   { id: "whiteout", label: "Cover", Icon: IconEraser, hint: "Covers content with a white box. Text underneath can still be copied, so don't use it to hide secrets.", modes: ["edit"] },
+  { id: "redact", label: "Redact", Icon: IconRedact, hint: "Drag over anything to redact it, or find personal data below. When you save or download, everything under a mark is deleted from the file and covered in black.", modes: ["edit"] },
 ];
 
 export const toolHint = (t: Tool) => TOOLS.find((x) => x.id === t)?.hint ?? "";

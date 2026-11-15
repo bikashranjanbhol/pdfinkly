@@ -22,6 +22,9 @@ export { layoutReplaceLines } from "./fonts";
 import { deriveModel, type Annotation, type DocModel, type Face, type FontName, type Operation, type PageEntry, type Rect } from "./operations";
 import { drawOcrLayer, OCR_FONT_NAME, type OcrLine } from "./ocr";
 import { removeOcrLayer, removeTextFromPageDetailed } from "./pdftext";
+import { applyRedactedImages, redactionsByPage, redactPage, type RedactImageResult, type RedactStats } from "./redact";
+import { overlaps } from "./contentstream";
+export { planRedactionImages, type RedactImageJob, type RedactImageResult } from "./redact";
 
 export interface ExportInput {
   /** Bytes of the base version the operations were made against. */
@@ -35,6 +38,8 @@ export interface ExportInput {
   onWarning?: (message: string) => void;
   /** Recognised text to add as an invisible, searchable layer, keyed by page ref. */
   ocr?: Record<string, OcrLine[]>;
+  /** Images under redactions with their pixels blacked out (see planRedactionImages). */
+  redactImages?: RedactImageResult[];
 }
 
 export class ExportError extends Error {
@@ -176,10 +181,17 @@ function replaceTargets(model: DocModel, match: (src: PageEntry["source"]) => nu
   return [...byIndex].map(([index, annots]) => ({ index, annots }));
 }
 
-export async function exportPdf({ base, ops, external = {}, loadFont, onWarning, ocr }: ExportInput): Promise<Uint8Array> {
+export async function exportPdf({ base, ops, external = {}, loadFont, onWarning, ocr, redactImages = [] }: ExportInput): Promise<Uint8Array> {
   const src = await load(base);
   const model = deriveModel(src.getPageCount(), ops);
+  const redactions = redactionsByPage(model);
+  const redacting = redactions.size > 0;
   const hasForm = applyForm(src, model.form);
+  if (redacting) {
+    // Form fields keep their values outside the page; flatten them into the page so redaction reaches them.
+    try { src.getForm().flatten(); } catch { /* no AcroForm */ }
+    applyRedactedImages(src, "base", redactImages);
+  }
   // Edited text: remove originals from the source pages before they're copied anywhere.
   const scanned = new Set<string>();
   const incomplete = removeEditedText(src, replaceTargets(model, (s) => (s.kind === "base" ? s.index : null)), scanned);
@@ -208,6 +220,10 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning,
       const bytes = external[versionId];
       if (!bytes) throw new ExportError("MISSING_EXTERNAL", `Missing merged file ${versionId}`);
       const extDoc = await load(bytes);
+      if (redacting) {
+        try { extDoc.getForm().flatten(); } catch { /* no AcroForm */ }
+        applyRedactedImages(extDoc, versionId, redactImages);
+      }
       for (const id of removeEditedText(extDoc, replaceTargets(model, (s) => (s.kind === "ext" && s.versionId === versionId ? s.index : null)), scanned)) incomplete.add(id);
       const idx = model.pages.flatMap((p) => (p.source.kind === "ext" && p.source.versionId === versionId ? [p.source.index] : []));
       const copies = await out.copyPages(extDoc, idx);
@@ -264,7 +280,9 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning,
 
   for (const { id, page: ref, annot } of model.annotations) {
     const page = pagesByRef.get(ref);
-    if (!page) continue;
+    if (!page || annot.kind === "redact") continue;
+    // Pictures placed over a redaction would survive it (they're added after): leave them out.
+    if ((annot.kind === "image" || annot.kind === "signature") && redactions.get(ref)?.some((r) => overlaps(annot.rect, r))) continue;
     if (annot.kind === "replace") {
       await drawReplace(page, annot, incomplete.has(id) || scanned.has(id), faceFont);
       continue;
@@ -278,6 +296,19 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning,
       if (!page || !lines.length) continue;
       try { removeOcrLayer(out, page, OCR_FONT_NAME); } catch { /* keep the old layer rather than fail the save */ }
       drawOcrLayer(out, page, lines);
+    }
+  }
+  // Redact last, so nothing drawn above (edited text, OCR text, stamps) survives under a mark.
+  if (redacting) {
+    const total: RedactStats = { glyphs: 0, paths: 0, inlineImages: 0, imagesCleaned: 0, imagesRemoved: 0, forms: 0, annots: 0 };
+    for (const [ref, rects] of redactions) {
+      const page = pagesByRef.get(ref);
+      if (!page) continue;
+      const st = redactPage(out, page, rects);
+      for (const k of Object.keys(total) as Array<keyof RedactStats>) total[k] += st[k];
+    }
+    if (total.imagesRemoved) {
+      onWarning?.(`${total.imagesRemoved === 1 ? "An image" : `${total.imagesRemoved} images`} under a redaction couldn't be edited, so ${total.imagesRemoved === 1 ? "it was" : "they were"} removed entirely.`);
     }
   }
   if (incomplete.size) {

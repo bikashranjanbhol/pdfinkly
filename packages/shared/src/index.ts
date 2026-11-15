@@ -84,3 +84,4 @@ export interface UploadTicket {
 export * from "./fonts";
 export * from "./ocrTypes";
 export * from "./visual";
+export * from "./pii";

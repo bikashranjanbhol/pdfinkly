@@ -17,6 +17,7 @@ import { api, ApiFailure, saveBytes } from "@/lib/client/api";
 import { fetchBytes, openPdf, uploadNewPdf, uploadNewVersion } from "@/lib/client/pdf";
 import type { OcrLine } from "@pdfinkly/shared";
 import { looksScanned } from "@/lib/client/ocr";
+import { verifyRedactions } from "@/lib/client/redaction";
 import { IconBack, IconCheck, IconDownload, IconHistory, IconRotateL, IconRotateR, IconScan, IconShare } from "../icons";
 import { OcrDialog, type OcrPageRef } from "./OcrDialog";
 import { Mark } from "../Logo";
@@ -256,6 +257,24 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   }
   const withWarnings = (msg: string) => [msg, ...exportWarnings.current].join(" ");
 
+  /** Redacted pages (output index, rects, marked texts), for checking the saved file. */
+  const redactionChecks = () =>
+    (model?.pages ?? []).flatMap((p, index) => {
+      const marks = (model?.annotations ?? []).flatMap((a) => (a.page === p.ref && a.annot.kind === "redact" ? [a.annot] : []));
+      return marks.length ? [{ index, rects: marks.map((m) => m.rect), texts: marks.flatMap((m) => (m.text ? [m.text] : [])) }] : [];
+    });
+
+  /** Re-read the new file: nothing may remain under a redaction. */
+  async function checkRedactions(bytes: Uint8Array) {
+    const checks = redactionChecks();
+    if (!checks.length) return 0;
+    const leaks = await verifyRedactions(bytes, checks).catch(() => [] as string[]);
+    if (leaks.length) {
+      exportWarnings.current.push(`Check before sharing: some text under a redaction is still in the file (${leaks.slice(0, 3).map((l) => `“${l.slice(0, 30)}”`).join(", ")}). Mark a slightly bigger area and save again.`);
+    }
+    return checks.reduce((n, c) => n + c.rects.length, 0);
+  }
+
   async function download() {
     if (!doc) return;
     const current = effectiveOps(useEditor.getState());
@@ -265,7 +284,9 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
     }
     setBusy("export");
     try {
-      saveBytes(await exportBytes(), doc.file.name);
+      const bytes = await exportBytes();
+      await checkRedactions(bytes);
+      saveBytes(bytes, doc.file.name);
       if (exportWarnings.current.length) setNotice(withWarnings("Downloaded."));
     } catch (e) {
       setNotice(e instanceof Error ? `Couldn't create the PDF: ${e.message}` : "Couldn't create the PDF.");
@@ -285,10 +306,14 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
     setBusy("save");
     try {
       const bytes = await exportBytes(ocr?.result);
+      const redacted = await checkRedactions(bytes);
       await uploadNewVersion(fileId, bytes, doc.baseVersionId, model.pages.length);
       useEditor.getState().reset([], 0);
       await load();
-      setNotice(withWarnings(ocr?.message ?? "Saved as a new version."));
+      const saved = redacted
+        ? `Saved as a new version with ${redacted === 1 ? "1 area" : `${redacted} areas`} redacted: what was under ${redacted === 1 ? "it" : "them"} is gone from this version. Earlier versions in History still have the original.`
+        : "Saved as a new version.";
+      setNotice(withWarnings(ocr?.message ?? saved));
       if (ocr) setScanHint(false);
     } catch (e) {
       setNotice(e instanceof ApiFailure ? e.message : e instanceof Error ? `Couldn't save: ${e.message}` : "Couldn't save.");
@@ -463,7 +488,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
               </div>
             </main>
           )}
-          {mode === "edit" && <Properties annotations={model.annotations} />}
+          {mode === "edit" && <Properties annotations={model.annotations} pages={ocrPages} />}
         </div>
 
         <input ref={mergeInput} type="file" accept="application/pdf,.pdf" className="sr-only" tabIndex={-1} aria-hidden="true"

@@ -84,6 +84,28 @@ for OCR and there is no server cost.
 Limits: about 2–3 s per page on a laptop; handwriting, tables and very low-quality scans recognise poorly;
 recognised Hindi is searchable and copyable but can't be edited yet.
 
+## Redaction
+
+The **Redact** tool deletes what's under a marked area from the file; it doesn't just cover it.
+
+- **Marking.** Drag over anything, or use **Find and redact** in the side panel. It finds Aadhaar numbers
+  (Verhoeff-checked), PAN, Indian phone numbers, email and UPI IDs, IFSC codes, bank account numbers (only on lines
+  that mention an account), and any words you type. Matches across separate text runs and OCR words are joined
+  per line, so a number split into pieces is still found. Marks stay reviewable until you save or download.
+- **What's removed** (`packages/shared/src/redact.ts`, applied last in the export so nothing drawn later survives):
+  text glyphs whose centre is under a mark (including invisible OCR text), vector drawings that lie entirely
+  inside a mark, inline images touching it, text and drawings inside form XObjects, overlapping PDF annotations
+  (links, comments), and form fields (the form is flattened first). A black box is then drawn over each mark.
+- **Images.** The export worker finds every image under a mark and packs it into a one-image PDF; the browser
+  renders it with PDF.js (so every PDF image format decodes), fills the marked pixels with black, and re-encodes
+  it (JPEG if it was JPEG, otherwise lossless). The cleaned image replaces the original object. An image that
+  can't be decoded is removed entirely, with a warning, rather than left readable.
+- **Verification.** After every save or download the new file is read back with PDF.js; if any text is still
+  under a mark (or a marked phrase is still findable there), the user is told before sharing.
+
+Limits: older versions in History still contain the original (the save message says so); scanned pages need
+Recognise text before Find can see them; images shared between pages are cleaned everywhere they appear.
+
 ## Repository layout
 
 ```
@@ -139,6 +161,7 @@ BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smo
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
 python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
 python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
+python3 scripts/ui_redact.py                                                             # Redaction: find, mark, save, check file + pixels
 ```
 
 The UI test uploads a PDF, adds a highlight, text, a drawing and a signature, checks autosave, undo/redo and
@@ -176,4 +199,4 @@ Plan limits live in the `plans` table, so they can change without a deploy. The 
 ## Next phases
 
 - **Phase 2**: worker service (compress, Office ↔ PDF, server-side OCR for very large files) with a job queue, as described in the LLD.
-- **Phase 3**: billing, true redaction, team workspaces.
+- **Phase 3**: billing, team workspaces.

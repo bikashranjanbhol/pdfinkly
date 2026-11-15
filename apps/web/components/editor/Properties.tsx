@@ -4,6 +4,8 @@ import { describeFont, matchFont, newId, OCR_FONT_NAME, type Annotation, type Fa
 import { describe, translate } from "./annotations";
 import { useEditor } from "./store";
 import { toolHint } from "./Toolbar";
+import { RedactPanel } from "./RedactPanel";
+import type { OcrPageRef } from "./OcrDialog";
 
 const FACE_LABEL: Record<Face, string> = {
   Carlito: "Carlito (Calibri-compatible)",
@@ -33,7 +35,7 @@ function Swatches({ value, options, onChange, label }: { value: string; options:
   );
 }
 
-export function Properties({ annotations }: { annotations: PlacedAnnotation[] }) {
+export function Properties({ annotations, pages = [] }: { annotations: PlacedAnnotation[]; pages?: OcrPageRef[] }) {
   const tool = useEditor((s) => s.tool);
   const style = useEditor((s) => s.style);
   const selected = useEditor((s) => s.selected);
@@ -151,6 +153,8 @@ export function Properties({ annotations }: { annotations: PlacedAnnotation[] })
             </button>
           </div>}
         </section>
+      ) : tool === "redact" ? (
+        <RedactPanel pages={pages} annotations={annotations} />
       ) : (
         <section aria-labelledby="style-h" className="flex flex-col gap-4">
           <h2 id="style-h" className="text-[15px] font-semibold">Style for new items</h2>

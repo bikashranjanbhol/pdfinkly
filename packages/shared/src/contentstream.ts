@@ -221,8 +221,13 @@ interface TextState { Tc: number; Tw: number; Th: number; TL: number; Ts: number
  * Walk the content stream, calling `onShow` for every text-showing op with the
  * glyph positions it produces. Returns nothing; callers collect what they need.
  */
-function interpret(ops: Op[], fonts: FontResolver, onShow: (opIndex: number, glyphs: Array<{ code: number; bytes: Uint8Array; cx: number; cy: number; adv: number; isSpace: boolean; seg: number }>, ts: TextState, metrics: FontMetrics | null) => void) {
-  let ctm: M = [...ID];
+function interpret(
+  ops: Op[],
+  fonts: FontResolver,
+  onShow: (opIndex: number, glyphs: Array<{ code: number; bytes: Uint8Array; cx: number; cy: number; adv: number; isSpace: boolean; seg: number }>, ts: TextState, metrics: FontMetrics | null, origin: [number, number]) => void,
+  opts: { ctm?: M; onOp?: (o: Op, idx: number, ctm: M) => void } = {},
+) {
+  let ctm: M = opts.ctm ? [...opts.ctm] as M : [...ID];
   let ts: TextState = { Tc: 0, Tw: 0, Th: 1, TL: 0, Ts: 0, Tr: 0, font: null, size: 0 };
   const stack: Array<{ ctm: M; ts: TextState }> = [];
   let Tm: M = [...ID];
@@ -236,6 +241,7 @@ function interpret(ops: Op[], fonts: FontResolver, onShow: (opIndex: number, gly
 
   const show = (opIndex: number, parts: Operand[]) => {
     const metrics = ts.font ? fonts(ts.font) : null;
+    const origin = apply(mul([1, 0, 0, 1, 0, ts.Ts], mul(Tm, ctm)), 0, ts.size * 0.35);
     const glyphs: Array<{ code: number; bytes: Uint8Array; cx: number; cy: number; adv: number; isSpace: boolean; seg: number }> = [];
     parts.forEach((part, seg) => {
       if (part.t === "num") {
@@ -256,11 +262,12 @@ function interpret(ops: Op[], fonts: FontResolver, onShow: (opIndex: number, gly
         Tm = mul([1, 0, 0, 1, adv, 0], Tm);
       }
     });
-    onShow(opIndex, glyphs, { ...ts }, metrics);
+    onShow(opIndex, glyphs, { ...ts }, metrics, origin);
   };
 
   ops.forEach((o, idx) => {
     const a = o.args;
+    opts.onOp?.(o, idx, ctm);
     switch (o.op) {
       case "q": stack.push({ ctm: [...ctm] as M, ts: { ...ts } }); break;
       case "Q": { const s = stack.pop(); if (s) { ctm = s.ctm; ts = s.ts; } break; }
@@ -310,13 +317,25 @@ export interface RemovalGroup {
  */
 export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: RemovalGroup[], tol = 0.75): { bytes: Uint8Array | null; removed: Record<string, number>; invisible: Record<string, number> } {
   const ops = parseContent(src);
+  const { rewrites, removed, invisible } = glyphRewrites(ops, fonts, groups, tol);
+  return { bytes: rewrites.size ? assemble(src, ops, rewrites) : null, removed, invisible };
+}
+
+function glyphRewrites(ops: Op[], fonts: FontResolver, groups: RemovalGroup[], tol: number, interpretOpts: Parameters<typeof interpret>[3] = {}) {
   const removed: Record<string, number> = Object.fromEntries(groups.map((g) => [g.id, 0]));
   /** Removed glyphs that were invisible (render mode 3: an OCR layer over a scanned image). */
   const invisible: Record<string, number> = Object.fromEntries(groups.map((g) => [g.id, 0]));
   const rewrites = new Map<number, Uint8Array>();
+  /** Text ops we couldn't place glyph by glyph (unknown font, vertical writing) whose start is inside a rect. */
+  const unplaced: number[] = [];
 
-  interpret(ops, fonts, (opIndex, glyphs, ts, metrics) => {
-    if (!metrics || metrics.vertical || glyphs.length === 0 || ts.size === 0) return;
+  interpret(ops, fonts, (opIndex, glyphs, ts, metrics, origin) => {
+    if (!metrics || metrics.vertical || ts.size === 0) {
+      const inGroup = groups.some((grp) => (!grp.fonts || grp.fonts.has(ts.font ?? "")) && grp.rects.some((r) => inside(origin[0], origin[1], r, tol)));
+      if (inGroup) unplaced.push(opIndex);
+      return;
+    }
+    if (glyphs.length === 0) return;
     const hit = glyphs.map((g) => {
       for (const grp of groups) {
         if (grp.fonts && !grp.fonts.has(ts.font ?? "")) continue;
@@ -364,9 +383,13 @@ export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: Remov
     if (o.op === "'") text = `T* ${text}`;
     if (o.op === '"') text = `${fmt(ts.Tw)} Tw ${fmt(ts.Tc)} Tc T* ${text}`;
     rewrites.set(opIndex, new TextEncoder().encode(text));
-  });
+  }, interpretOpts);
 
-  if (rewrites.size === 0) return { bytes: null, removed, invisible };
+  return { rewrites, removed, invisible, unplaced };
+}
+
+/** Splice rewritten operations (empty = deleted) back into the source bytes. */
+function assemble(src: Uint8Array, ops: Op[], rewrites: Map<number, Uint8Array>): Uint8Array {
   const chunks: Uint8Array[] = [];
   let pos = 0;
   ops.forEach((o, idx) => {
@@ -380,7 +403,115 @@ export function removeGlyphs(src: Uint8Array, fonts: FontResolver, groups: Remov
   const out = new Uint8Array(total);
   let off = 0;
   for (const c of chunks) { out.set(c, off); off += c.length; }
-  return { bytes: out, removed, invisible };
+  return out;
+}
+
+/* ------------------------------------------------------------ redaction */
+
+export type Matrix = M;
+export const IDENTITY: M = [...ID];
+export const multiply = mul;
+export const transformPoint = apply;
+
+/** Bounding box (page space) of the unit square drawn under `m` (an image or a form's unit space). */
+export function unitBox(m: M): Box {
+  const pts = [apply(m, 0, 0), apply(m, 1, 0), apply(m, 0, 1), apply(m, 1, 1)];
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+export const overlaps = (a: Box, b: Box, tol = 0) =>
+  a.x < b.x + b.w + tol && b.x < a.x + a.w + tol && a.y < b.y + b.h + tol && b.y < a.y + a.h + tol;
+
+const within = (a: Box, r: Box, tol: number) =>
+  a.x >= r.x - tol && a.y >= r.y - tol && a.x + a.w <= r.x + r.w + tol && a.y + a.h <= r.y + r.h + tol;
+
+export interface XObjectCall {
+  name: string;
+  /** CTM in effect at the Do operator. */
+  ctm: M;
+  opIndex: number;
+}
+
+export interface RedactStreamResult {
+  bytes: Uint8Array | null;
+  glyphs: number;
+  paths: number;
+  inlineImages: number;
+  /** XObjects drawn by this stream, for the caller to inspect (images, forms). */
+  xobjects: XObjectCall[];
+}
+
+const PAINT = new Set(["S", "s", "f", "F", "f*", "B", "B*", "b", "b*"]);
+const PATH = new Set(["m", "l", "c", "v", "y", "h", "re"]);
+
+/**
+ * Redact one content stream: delete every glyph whose centre is inside a rect,
+ * every filled or stroked path that lies entirely inside one, and inline images
+ * that touch one. `dropXObject` decides, per Do operator, whether to delete it
+ * (images that couldn't be cleaned). Everything else keeps its exact position.
+ */
+export function redactStream(
+  src: Uint8Array,
+  fonts: FontResolver,
+  rects: Box[],
+  opts: { ctm?: M; dropXObject?: (call: XObjectCall) => boolean; tol?: number } = {},
+): RedactStreamResult {
+  const tol = opts.tol ?? 0.75;
+  const ops = parseContent(src);
+  const g = glyphRewrites(ops, fonts, [{ id: "r", rects }], tol, { ctm: opts.ctm });
+  const rewrites = g.rewrites;
+  const EMPTY = new Uint8Array();
+  for (const idx of g.unplaced) rewrites.set(idx, EMPTY);
+  let glyphs = (g.removed.r ?? 0) + g.unplaced.length;
+  let paths = 0;
+  let inlineImages = 0;
+  const xobjects: XObjectCall[] = [];
+
+  let pathStart = -1;
+  let pts: Array<[number, number]> = [];
+  interpret(ops, fonts, () => {}, {
+    ctm: opts.ctm,
+    onOp: (o, idx, ctm) => {
+      const n = o.args.map((a) => (a.t === "num" ? a.v : 0));
+      if (PATH.has(o.op)) {
+        if (pathStart < 0) pathStart = idx;
+        if (o.op === "re") {
+          const [x, y, w, h] = n as [number, number, number, number];
+          pts.push(apply(ctm, x, y), apply(ctm, x + w, y), apply(ctm, x, y + h), apply(ctm, x + w, y + h));
+        } else {
+          for (let k = 0; k + 1 < n.length; k += 2) pts.push(apply(ctm, n[k]!, n[k + 1]!));
+        }
+        return;
+      }
+      if (PAINT.has(o.op) || o.op === "n") {
+        if (PAINT.has(o.op) && pathStart >= 0 && pts.length) {
+          const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+          const box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+          if (rects.some((r) => within(box, r, tol))) {
+            for (let k = pathStart; k <= idx; k++) if (PATH.has(ops[k]!.op) || k === idx) rewrites.set(k, EMPTY);
+            paths++;
+          }
+        }
+        pathStart = -1;
+        pts = [];
+        return;
+      }
+      if (o.op === "BI") {
+        const box = unitBox(ctm);
+        if (rects.some((r) => overlaps(box, r))) { rewrites.set(idx, EMPTY); inlineImages++; }
+        return;
+      }
+      if (o.op === "Do" && o.args[0]?.t === "name") {
+        const call = { name: o.args[0].v, ctm: [...ctm] as M, opIndex: idx };
+        xobjects.push(call);
+        if (opts.dropXObject?.(call)) rewrites.set(idx, EMPTY);
+      }
+    },
+  });
+
+  return { bytes: rewrites.size ? assemble(src, ops, rewrites) : null, glyphs, paths, inlineImages, xobjects };
 }
 
 const fmt = (v: number) => {

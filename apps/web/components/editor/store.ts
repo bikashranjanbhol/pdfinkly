@@ -5,7 +5,7 @@ import type { FontName, Operation } from "@pdfinkly/shared";
 
 export type Tool =
   | "select" | "edittext" | "text" | "highlight" | "draw" | "rect" | "ellipse" | "arrow"
-  | "image" | "note" | "signature" | "whiteout";
+  | "image" | "note" | "signature" | "whiteout" | "redact";
 
 export type Mode = "edit" | "organize" | "sign";
 export type SaveState = "idle" | "dirty" | "saving" | "saved" | "conflict" | "error";

@@ -62,9 +62,10 @@ export function translate(a: Annotation, dx: number, dy: number): Annotation {
 
 const LABEL: Record<Annotation["kind"], string> = {
   text: "Text", highlight: "Highlight", ink: "Drawing", rect: "Rectangle", ellipse: "Ellipse", line: "Line",
-  arrow: "Arrow", image: "Image", signature: "Signature", note: "Note", whiteout: "White-out", replace: "Edited text",
+  arrow: "Arrow", image: "Image", signature: "Signature", note: "Note", whiteout: "White-out", replace: "Edited text", redact: "Redaction",
 };
 export const describe = (a: Annotation) =>
+  a.kind === "redact" ? `Redaction · ${a.label ?? "area"}${a.text ? `: ${a.text.slice(0, 30)}` : ""}` :
   a.kind === "replace" ? `Edited · ${a.text.split("\n")[0]?.slice(0, 40) || "(deleted text)"}` :
   a.kind === "text" ? a.text.split("\n")[0] || "Text" : a.kind === "note" ? `Note · ${a.text.slice(0, 40) || "empty"}` : LABEL[a.kind];
 
@@ -75,6 +76,16 @@ export function ShapeSvg({ a, g }: { a: Annotation; g: PageGeom }) {
     case "highlight": {
       const c = rectToCss(g, a.rect);
       return <rect x={c.left} y={c.top} width={c.width} height={c.height} fill={a.color} fillOpacity={0.4} style={{ mixBlendMode: "multiply" }} />;
+    }
+    case "redact": {
+      // A mark under review: the content stays visible through it until the file is saved.
+      const c = rectToCss(g, a.rect);
+      return (
+        <g>
+          <rect x={c.left} y={c.top} width={c.width} height={c.height} fill="#18181B" fillOpacity={0.35} stroke="#DC2626" strokeWidth={1.5} />
+          {a.label && <text x={c.left} y={c.top - 3} fill="#B91C1C" fontSize={10} fontWeight={600} fontFamily="system-ui, sans-serif">{a.label}</text>}
+        </g>
+      );
     }
     case "whiteout": {
       const c = rectToCss(g, a.rect);
