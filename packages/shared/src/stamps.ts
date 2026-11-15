@@ -1,6 +1,6 @@
 import { PDFArray, PDFName, StandardFonts, degrees, rgb, type PDFDocument, type PDFFont, type PDFImage, type PDFPage, type PDFRef } from "pdf-lib";
 import type { DocModel, HeaderFooter, Watermark } from "./operations";
-import { fillSlot, parsePageRange, slotStart, stampDate, startFor, watermarkCentres } from "./stampLayout";
+import { batesNumber, fillSlot, parsePageRange, slotStart, stampDate, startFor, watermarkCentres } from "./stampLayout";
 import { fromTextFrame } from "./visual";
 
 export { parsePageRange } from "./stampLayout";
@@ -114,6 +114,17 @@ export async function drawStamps(doc: PDFDocument, pages: PDFPage[], model: DocM
       dropped = drawMarginText(pages[pageNo - 1]!, { top: hf.top.map((t) => fillSlot(t, v)), bottom: hf.bottom.map((t) => fillSlot(t, v)) }, font, hf.size, hf.color, hf.margin) || dropped;
     });
     if (dropped) onWarning?.("Some header or footer characters (e.g. Hindi) can't be drawn with the standard fonts yet and were left out.");
+  }
+
+  const bates = model.stamps.bates;
+  if (bates) {
+    const which = [...(parsePageRange(bates.pages, pages.length) ?? [])].sort((a, b) => a - b);
+    const font = await doc.embedFont(STD[bates.font]);
+    which.forEach((pageNo, k) => {
+      const slots = ["", "", ""];
+      slots[bates.slot] = batesNumber(bates, k);
+      drawMarginText(pages[pageNo - 1]!, bates.top ? { top: slots, bottom: [] } : { top: [], bottom: slots }, font, bates.size, bates.color, bates.margin);
+    });
   }
 
   const wm = model.stamps.watermark;

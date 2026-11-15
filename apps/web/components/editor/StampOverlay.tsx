@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fillSlot, parsePageRange, slotStart, stampDate, startFor, watermarkCentres, type DocModel } from "@pdfinkly/shared";
+import { batesNumber, fillSlot, parsePageRange, slotStart, stampDate, startFor, watermarkCentres, type DocModel } from "@pdfinkly/shared";
 import type { PageGeom } from "./geometry";
 
 const CSS_FONT = { Helvetica: "Helvetica, Arial, sans-serif", TimesRoman: "'Times New Roman', Times, serif", Courier: "'Courier New', Courier, monospace" } as const;
@@ -50,6 +50,18 @@ export function StampOverlay({ stamps, g, pageNo, pageCount, fileName = "" }: { 
           els.push(<text key={`hf${top}${slot}`} x={x} y={y} fill={hf.color} fontSize={hf.size * g.scale} fontFamily={CSS_FONT[hf.font]} style={{ whiteSpace: "pre" }}>{text}</text>);
         });
       }
+    }
+  }
+
+  const bates = stamps.bates;
+  if (bates) {
+    const which = [...(parsePageRange(bates.pages, pageCount) ?? [])].sort((a, b) => a - b);
+    const k = which.indexOf(pageNo);
+    if (k >= 0) {
+      const text = batesNumber(bates, k);
+      const w = measureText(text, bates.size, false, bates.font);
+      const [x, y] = css(...slotStart(bates.slot, bates.top, W, H, w, bates.size, bates.margin));
+      els.push(<text key="bates" x={x} y={y} fill={bates.color} fontSize={bates.size * g.scale} fontFamily={CSS_FONT[bates.font]} style={{ whiteSpace: "pre" }}>{text}</text>);
     }
   }
 

@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 import { exportPdf } from "../src/export";
-import type { HeaderFooter, Operation, Watermark } from "../src/operations";
+import type { Bates, HeaderFooter, Operation, Watermark } from "../src/operations";
 import { parsePageRange } from "../src/stampLayout";
 
 const FIX = path.join(__dirname, "fixtures");
@@ -142,6 +142,38 @@ describe("page numbers, headers and footers", () => {
     expect(it.transform[1]!).toBeGreaterThan(0);
     // Bottom edge as displayed = the page's right edge (x = width - margin).
     expect(it.transform[4]).toBeCloseTo(595.92 - 28, 0);
+  });
+});
+
+describe("Bates numbering", () => {
+  const bates = (over: Partial<Bates> = {}): Bates => ({
+    kind: "bates", prefix: "ABC", suffix: "", start: 124, digits: 6, top: false, slot: 2, font: "Helvetica", size: 9,
+    color: "#18181B", margin: 20, pages: "", ...over,
+  });
+
+  it("stamps a zero-padded running number on each page, bottom right", async () => {
+    const out = await exportPdf({ base: await three(), ops: [{ op: "stamp.set", key: "bates", stamp: bates() }] });
+    for (const [n, want] of [[1, "ABC000124"], [2, "ABC000125"], [3, "ABC000126"]] as const) {
+      const it = (await items(out, n)).find((i) => i.str.startsWith("ABC"))!;
+      expect(it.str).toBe(want);
+      expect(it.transform[4]! + it.width).toBeCloseTo(595.92 - 20, 0);
+      expect(it.transform[5]).toBeCloseTo(20, 0);
+    }
+  });
+
+  it("works alongside page numbers, with a suffix, on chosen pages", async () => {
+    const out = await exportPdf({
+      base: await three(),
+      ops: [
+        { op: "stamp.set", key: "headerFooter", stamp: hf() },
+        { op: "stamp.set", key: "bates", stamp: bates({ suffix: "-CONF", start: 1, digits: 4, top: true, slot: 0, pages: "2-3" }) },
+      ],
+    });
+    expect((await items(out, 1)).some((i) => i.str.includes("CONF"))).toBe(false);
+    const p2 = await items(out, 2);
+    expect(p2.find((i) => i.str === "ABC0001-CONF")).toBeTruthy();
+    expect(p2.find((i) => i.str === "Page 2 of 3")).toBeTruthy();
+    expect((await items(out, 3)).find((i) => i.str === "ABC0002-CONF")).toBeTruthy();
   });
 });
 

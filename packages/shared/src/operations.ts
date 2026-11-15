@@ -126,7 +126,25 @@ export const HeaderFooterSchema = z.object({
 });
 export type HeaderFooter = z.infer<typeof HeaderFooterSchema>;
 
-export const StampSchema = z.discriminatedUnion("kind", [WatermarkSchema, HeaderFooterSchema]);
+/** Bates numbers: prefix + zero-padded running number + suffix, one per stamped page. */
+export const BatesSchema = z.object({
+  kind: z.literal("bates"),
+  prefix: z.string().max(40),
+  suffix: z.string().max(40),
+  start: z.number().int().min(0).max(999_999_999_999),
+  digits: z.number().int().min(1).max(12),
+  /** Where on the page: top or bottom, and slot 0/1/2 = left/centre/right. */
+  top: z.boolean(),
+  slot: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  font: FontSchema,
+  size: z.number().min(5).max(36),
+  color: ColorSchema,
+  margin: z.number().min(4).max(144),
+  pages: PageRangeSchema,
+});
+export type Bates = z.infer<typeof BatesSchema>;
+
+export const StampSchema = z.discriminatedUnion("kind", [WatermarkSchema, HeaderFooterSchema, BatesSchema]);
 export type Stamp = z.infer<typeof StampSchema>;
 export type StampKey = Stamp["kind"];
 /** One stamp of each kind, typed by kind. */
@@ -156,7 +174,7 @@ export const OperationSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("form.set"), field: z.string().min(1).max(500), value: z.union([z.string().max(5000), z.boolean()]) }),
   /** Set (or with null, remove) a document-wide stamp: one of each kind. */
-  z.object({ op: z.literal("stamp.set"), key: z.enum(["watermark", "headerFooter"]), stamp: StampSchema.nullable() }),
+  z.object({ op: z.literal("stamp.set"), key: z.enum(["watermark", "headerFooter", "bates"]), stamp: StampSchema.nullable() }),
 ]);
 export type Operation = z.infer<typeof OperationSchema>;
 export const OperationsSchema = z.array(OperationSchema).max(20000);

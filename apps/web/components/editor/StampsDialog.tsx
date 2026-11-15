@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { parsePageRange, type DocModel, type HeaderFooter, type PageEntry, type Stamps, type Watermark } from "@pdfinkly/shared";
+import { batesNumber, parsePageRange, type Bates, type DocModel, type HeaderFooter, type PageEntry, type Stamps, type Watermark } from "@pdfinkly/shared";
 import { IconX } from "../icons";
 import { PageView } from "./PageView";
 import { useEditor } from "./store";
@@ -27,7 +27,12 @@ const NUMBER_FORMATS = [
 ];
 const SLOT_NAMES = ["left", "centre", "right"] as const;
 
-type Tab = "watermark" | "headerFooter";
+export const DEFAULT_BATES: Bates = {
+  kind: "bates", prefix: "", suffix: "", start: 1, digits: 6, top: false, slot: 2, font: "Helvetica", size: 9,
+  color: "#18181B", margin: 20, pages: "",
+};
+
+type Tab = "watermark" | "headerFooter" | "bates";
 
 /** "All pages" / "Only pages …" with validation; returns the effective range string and any error. */
 function usePages(initial: string, total: number) {
@@ -73,6 +78,10 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
   const setSlot = (top: boolean, i: number, v: string) =>
     setHf((h) => { const row = [...(top ? h.top : h.bottom)] as HeaderFooter["top"]; row[i] = v; return { ...h, [top ? "top" : "bottom"]: row }; });
 
+  const [bates, setBates] = useState<Bates>(model.stamps.bates ?? DEFAULT_BATES);
+  const batesPages = usePages(model.stamps.bates?.pages ?? "", total);
+  const setB = (patch: Partial<Bates>) => setBates((b) => ({ ...b, ...patch }));
+
   useEffect(() => { dialog.current?.focus(); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -82,9 +91,15 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
 
   const wmDraft: Watermark = { ...wm, pages: wmPages.range };
   const hfDraft: HeaderFooter = { ...hf, pages: hfPages.range };
+  const batesDraft: Bates = { ...bates, pages: batesPages.range };
   const active = tab === "watermark"
     ? { draft: wmDraft, pages: wmPages, empty: !wm.text.trim() && !wm.image, existing: model.stamps.watermark, noun: "watermark" }
-    : { draft: hfDraft, pages: hfPages, empty: ![...hf.top, ...hf.bottom].some((t) => t.trim()), existing: model.stamps.headerFooter, noun: "page numbers and headers" };
+    : tab === "headerFooter"
+      ? { draft: hfDraft, pages: hfPages, empty: ![...hf.top, ...hf.bottom].some((t) => t.trim()), existing: model.stamps.headerFooter, noun: "page numbers and headers" }
+      : { draft: batesDraft, pages: batesPages, empty: false, existing: model.stamps.bates, noun: "Bates numbers" };
+  const batesCount = batesPages.which?.size ?? 0;
+  // A header/footer slot in the same place would overlap.
+  const batesClash = !!model.stamps.headerFooter && !!(bates.top ? hf.top : hf.bottom)[bates.slot]?.trim();
   const previewNo = active.pages.which && active.pages.which.size ? Math.min(...active.pages.which) : 1;
   const previewEntry: PageEntry | undefined = model.pages[previewNo - 1];
   const previewStamps: Stamps = { ...model.stamps, [tab]: active.draft };
@@ -134,7 +149,7 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
           <button type="button" aria-label="Close" className="btn-ghost min-h-9 px-2" onClick={onClose}><IconX /></button>
         </div>
         <div role="tablist" aria-label="Stamp type" className="flex gap-1 border-b border-zinc-200 px-6">
-          {([["watermark", "Watermark"], ["headerFooter", "Page numbers & headers"]] as const).map(([id, label]) => (
+          {([["watermark", "Watermark"], ["headerFooter", "Page numbers & headers"], ["bates", "Bates numbering"]] as const).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
               className={`-mb-px border-b-2 px-3 py-2.5 text-sm font-semibold ${tab === id ? "border-brand-600 text-brand-700" : "border-transparent text-zinc-600 hover:text-ink"}`}>
               {label}{model.stamps[id] ? " •" : ""}
@@ -199,6 +214,51 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
               </fieldset>
               <PagesField name="wm" total={total} p={wmPages} />
               {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
+            </div>
+          ) : tab === "bates" ? (
+            <div role="tabpanel" aria-label="Bates numbering" className="flex flex-col gap-4">
+              <p className="text-[13px] text-zinc-600">A unique, running number on every page, used to reference pages in legal and audit documents.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Prefix
+                  <input className="field h-10 font-normal" value={bates.prefix} maxLength={40} placeholder="e.g. ACME-" onChange={(e) => setB({ prefix: e.target.value })} />
+                </label>
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Suffix
+                  <input className="field h-10 font-normal" value={bates.suffix} maxLength={40} placeholder="optional" onChange={(e) => setB({ suffix: e.target.value })} />
+                </label>
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Start at
+                  <input className="field h-10 font-normal" type="number" min={0} value={bates.start} onChange={(e) => setB({ start: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} />
+                </label>
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Digits
+                  <input className="field h-10 font-normal" type="number" min={1} max={12} value={bates.digits} onChange={(e) => setB({ digits: Math.min(12, Math.max(1, Math.floor(Number(e.target.value) || 6))) })} />
+                </label>
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Position
+                  <select className="field h-10 font-normal" aria-label="Bates position" value={`${bates.top ? "top" : "bottom"}-${bates.slot}`}
+                    onChange={(e) => { const [w, i] = e.target.value.split("-"); setB({ top: w === "top", slot: Number(i) as Bates["slot"] }); }}>
+                    <option value="bottom-2">Bottom right</option>
+                    <option value="bottom-1">Bottom centre</option>
+                    <option value="bottom-0">Bottom left</option>
+                    <option value="top-2">Top right</option>
+                    <option value="top-1">Top centre</option>
+                    <option value="top-0">Top left</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Size (pt)
+                  <input className="field h-10 font-normal" type="number" min={5} max={36} value={bates.size} onChange={(e) => setB({ size: Math.min(36, Math.max(5, Number(e.target.value) || 9)) })} />
+                </label>
+              </div>
+              <p role="status" className="rounded-lg bg-zinc-50 px-3 py-2 text-[13px] text-zinc-700">
+                {batesCount > 0
+                  ? <>This document: <b>{batesNumber(bates, 0)}</b>{batesCount > 1 && <> to <b>{batesNumber(bates, batesCount - 1)}</b></>}. The next document can start at {bates.start + batesCount}.</>
+                  : "Choose the pages to number."}
+              </p>
+              {batesClash && <p className="text-[13px] text-amber-800">Your header or footer already has text in this position; pick another so they don&apos;t overlap.</p>}
+              <PagesField name="bates" total={total} p={batesPages} />
             </div>
           ) : (
             <div role="tabpanel" aria-label="Page numbers and headers" className="flex flex-col gap-4">
@@ -286,7 +346,7 @@ export function StampsDialog({ model, fileName, onClose, initialTab = "watermark
           <div className="flex gap-2">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
             <button type="button" className="btn-primary" disabled={!!active.pages.error || active.empty} onClick={apply}>
-              {tab === "watermark" ? (active.existing ? "Update watermark" : "Add watermark") : (active.existing ? "Update" : "Add to pages")}
+              {tab === "watermark" ? (active.existing ? "Update watermark" : "Add watermark") : tab === "bates" ? (active.existing ? "Update numbers" : "Add Bates numbers") : (active.existing ? "Update" : "Add to pages")}
             </button>
           </div>
         </div>

@@ -96,6 +96,8 @@ on export in the page's visual frame, so they read upright on rotated pages
 - **Page numbers, headers and footers:** three slots at the top and three at the bottom, with `{page}`,
   `{pages}`, `{date}` (DD/MM/YYYY) and `{file}`; a page-number shortcut (position + format); font, size,
   colour, margin; a first number and a page range (e.g. `2-` to skip a cover page, numbering from 1).
+- **Bates numbering:** prefix + zero-padded running number + suffix (e.g. `ACME-000041`) in any corner or edge
+  centre, on chosen pages; the dialog shows the range used and where the next document should start.
 
 ## Redaction
 

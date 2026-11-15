@@ -104,6 +104,22 @@ def main():
         for s in ["1 / 1", "chrome-cid.pdf", "Confidential", "Aditi Sharma"]:
             assert s in text, f"{s!r} missing from saved file: {text}"
         print("  ✓ page numbers (bottom right, 1 / 1), header with {file} and text: previewed and in the saved file")
+
+        # --- Bates numbering
+        dlg = open_stamps(page, "Bates numbering")
+        dlg.get_by_label("Prefix").fill("ACME-")
+        dlg.get_by_label("Start at").fill("41")
+        dlg.get_by_label("Digits").fill("5")
+        expect(dlg.get_by_role("status")).to_contain_text("This document: ACME-00041. The next document can start at 42.")
+        dlg.get_by_label("Bates position").select_option("bottom-0")  # the saved footer already uses bottom right
+        expect(dlg.get_by_test_id("stamp-preview").get_by_text("ACME-00041")).to_be_visible()
+        page.screenshot(path=f"{OUT}/stamps-04-bates-dialog.png")
+        dlg.get_by_role("button", name="Add Bates numbers").click()
+        save(page)
+        reader, raw = saved(page)
+        text = reader.pages[0].extract_text()
+        assert "ACME-00041" in text and "Aditi Sharma" in text, text
+        print("  ✓ Bates number ACME-00041 (bottom left) previewed and in the saved file")
         browser.close()
 
     real = [e for e in errors if "favicon" not in e]

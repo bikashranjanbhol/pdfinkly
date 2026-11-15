@@ -69,3 +69,7 @@ export function slotStart(slot: number, top: boolean, W: number, H: number, w: n
   const y = top ? H - margin - size * 0.72 : margin;
   return [x, y];
 }
+
+/** The Bates number for the k-th stamped page (0-based). */
+export const batesNumber = (b: { prefix: string; suffix: string; start: number; digits: number }, k: number) =>
+  `${b.prefix}${String(b.start + k).padStart(b.digits, "0")}${b.suffix}`;
