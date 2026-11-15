@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { editDrafts, fileVersions, files, getDb, type FileRow, type FileVersionRow, type Plan } from "@pdfinkly/db";
 import type { FileSummary, VersionInfo } from "@pdfinkly/shared";
 import type { Actor } from "./actor";
@@ -18,12 +18,19 @@ export function assertSize(plan: Plan, sizeBytes: number) {
   }
 }
 
+/**
+ * Not deleted and not past its expiry. The cleanup cron only reclaims storage
+ * (daily on Vercel Hobby), so every read must check expiry itself.
+ */
+export const liveFile = () =>
+  and(isNull(files.deletedAt), or(isNull(files.expiresAt), gt(files.expiresAt, sql`now()`)));
+
 /** A file the actor owns and hasn't deleted; otherwise 404 (never 403, so ids can't be probed). */
 export async function getOwnedFile(actor: Actor, fileId: string): Promise<FileRow> {
   const [f] = await getDb()
     .select()
     .from(files)
-    .where(and(eq(files.id, fileId), eq(files.ownerId, actor.user.id), isNull(files.deletedAt)))
+    .where(and(eq(files.id, fileId), eq(files.ownerId, actor.user.id), liveFile()))
     .limit(1);
   if (!f) throw new HttpError("NOT_FOUND", "File not found.");
   return f;

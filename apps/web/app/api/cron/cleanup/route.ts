@@ -5,7 +5,8 @@ import { storage } from "@/lib/server/storage";
 
 /**
  * Deletes expired files and files soft-deleted more than a day ago: storage
- * objects first, then rows. Runs hourly via Vercel Cron (vercel.json), which
+ * objects first, then rows. Runs daily via Vercel Cron (vercel.json; Hobby allows
+ * one run a day — reads already hide expired files via liveFile()), which
  * sends `Authorization: Bearer $CRON_SECRET`.
  */
 export const dynamic = "force-dynamic";

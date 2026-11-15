@@ -164,6 +164,16 @@ cookie = guestCookie;
 assert.equal((await call(`/api/files/${fileId}/shares`, { method: "POST", json: {} })).status, 401);
 ok("guests are asked to sign in before sharing");
 
+// 8b. Expired files disappear immediately, before the (daily) cleanup cron runs
+{
+  const exp = await upload(await pdf(1), "Expiring.pdf");
+  await sql`UPDATE files SET expires_at = now() - interval '1 minute' WHERE id = ${exp.fileId}`;
+  assert.equal((await call(`/api/files/${exp.fileId}`)).status, 404);
+  const list = await call("/api/files");
+  assert.ok(!list.body.items.some((f) => f.id === exp.fileId), "expired file still listed");
+  ok("expired file is hidden from reads and the list before cleanup runs");
+}
+
 // 9. Soft delete + cron cleanup
 assert.equal((await call(`/api/files/${fileId}`, { method: "DELETE" })).status, 204);
 assert.equal((await call(`/api/files/${fileId}`)).status, 404);

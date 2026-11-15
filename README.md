@@ -23,7 +23,9 @@ Browser ──(edit ops, autosave)──▶ Next.js API on Vercel ──▶ Post
   so restore just points the file at an earlier version.
 - **Guests** are real user rows identified by a signed cookie. When they sign in, their files move into the account.
 - **Share links** store only a SHA-256 hash of the token and can be revoked.
-- **Cleanup**: an hourly Vercel Cron removes expired guest files and their storage objects.
+- **Expiry and cleanup**: expired files are hidden from every read the moment they expire. A daily Vercel Cron
+  (03:00 IST) then deletes them and their storage objects. Vercel Hobby allows one cron run a day; on Pro you can
+  make it hourly in `apps/web/vercel.json`.
 
 ## Repository layout
 
@@ -96,7 +98,7 @@ reload, rotates and deletes pages, saves a version, and then opens the saved PDF
 3. **Vercel project**: import the repo and set **Root Directory** to `apps/web` (Vercel detects the pnpm workspace).
    Add the variables from `.env.example` with `STORAGE_DRIVER=s3` and `APP_URL` set to your domain.
 4. **OAuth** (optional): set the callback URLs to `<APP_URL>/api/auth/callback/google` and `…/github`.
-5. Deploy. `apps/web/vercel.json` registers the hourly cleanup cron; Vercel sends `CRON_SECRET` with each call.
+5. Deploy. `apps/web/vercel.json` registers the daily cleanup cron; Vercel sends `CRON_SECRET` with each call.
 
 `STORAGE_DRIVER=local` does not work on Vercel (the filesystem is read-only and not shared between instances).
 

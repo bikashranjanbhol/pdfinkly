@@ -4,6 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { fileVersions, files, getDb, shareLinks, users } from "@pdfinkly/db";
 import { Logo } from "@/components/Logo";
 import { SharedViewer } from "@/components/SharedViewer";
+import { liveFile } from "@/lib/server/files";
 import { hashToken } from "@/lib/server/shares";
 import { storage } from "@/lib/server/storage";
 
@@ -19,7 +20,7 @@ async function resolve(token: string) {
     .innerJoin(files, eq(files.id, shareLinks.fileId))
     .innerJoin(fileVersions, eq(fileVersions.id, files.currentVersionId))
     .innerJoin(users, eq(users.id, files.ownerId))
-    .where(and(eq(shareLinks.tokenHash, hashToken(token)), isNull(shareLinks.revokedAt), isNull(files.deletedAt)))
+    .where(and(eq(shareLinks.tokenHash, hashToken(token)), isNull(shareLinks.revokedAt), liveFile()))
     .limit(1);
   if (!row) return null;
   if (row.share.expiresAt && row.share.expiresAt < new Date()) return null;

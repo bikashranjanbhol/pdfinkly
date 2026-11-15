@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { editDrafts, fileVersions, files, getDb } from "@pdfinkly/db";
 import { CreateFileBody } from "@pdfinkly/shared";
 import { ensureActor, getActor } from "@/lib/server/actor";
-import { assertSize, cleanName, expiryFor, toSummary } from "@/lib/server/files";
+import { assertSize, cleanName, expiryFor, liveFile, toSummary } from "@/lib/server/files";
 import { handle, ok, parseBody } from "@/lib/server/http";
 import { clientIp, rateLimit } from "@/lib/server/ratelimit";
 import { storage, versionKey } from "@/lib/server/storage";
@@ -16,7 +16,7 @@ export const GET = handle(async () => {
   const rows = await db
     .select()
     .from(files)
-    .where(and(eq(files.ownerId, actor.user.id), isNull(files.deletedAt)))
+    .where(and(eq(files.ownerId, actor.user.id), liveFile()))
     .orderBy(desc(files.updatedAt))
     .limit(200);
   const versionIds = rows.flatMap((f) => (f.currentVersionId ? [f.currentVersionId] : []));
