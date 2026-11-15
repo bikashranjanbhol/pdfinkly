@@ -87,8 +87,11 @@ reload, rotates and deletes pages, saves a version, and then opens the saved PDF
 
 ## Deploy to Vercel
 
-1. **Database**: create a Postgres database (Neon, Supabase or Vercel Postgres). Run the migration once from
-   your machine: `DATABASE_URL=<direct url> pnpm db:migrate`. Use the pooled URL for the app.
+1. **Database**: in the Vercel project, open **Storage → Create Database → Neon** and connect it to the project.
+   This sets `DATABASE_URL` (pooled, used by the app) and `DATABASE_URL_UNPOOLED` (direct). Tables are created and
+   updated automatically: every **production** build runs the migrations (`prebuild`), using the direct connection,
+   inside one transaction with a lock. Preview builds skip this, so a feature branch can't change the production schema.
+   Any other Postgres works too: set `DATABASE_URL` yourself.
 2. **Storage**: create a private Cloudflare R2 bucket (no egress fees) and an API token with object read/write.
    Add a CORS rule so the browser can upload and download directly:
    ```json
