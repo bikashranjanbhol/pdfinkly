@@ -18,6 +18,8 @@ export const ColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 export const RectSchema = z.object({ x: num, y: num, w: num.nonnegative(), h: num.nonnegative() });
 export const PointSchema = z.tuple([num, num]);
 export const FontSchema = z.enum(["Helvetica", "TimesRoman", "Courier"]);
+/** Typefaces available for redrawing edited text. Carlito/Caladea are metric-compatible with Calibri/Cambria. */
+export const FaceSchema = z.enum(["Helvetica", "TimesRoman", "Courier", "Carlito", "Caladea"]);
 
 // Inline images (uploads, signatures) as PNG/JPEG data URLs, capped at ~1.5 MB.
 const DataUrlSchema = z
@@ -37,11 +39,35 @@ export const AnnotationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("signature"), rect: RectSchema, dataUrl: DataUrlSchema }),
   z.object({ kind: z.literal("note"), at: PointSchema, text: z.string().max(2000) }),
   z.object({ kind: z.literal("whiteout"), rect: RectSchema }),
+  /**
+   * Edited text that was already in the PDF. On export the original glyphs under
+   * `cover` are deleted from the page's content stream, then `text` is drawn in
+   * `rect`, one line per "\n" (wrapped if wider than the box). Lines are placed
+   * from `firstBaseline` below the top of `rect`, `lineHeight` apart.
+   */
+  z.object({
+    kind: z.literal("replace"),
+    rect: RectSchema,
+    cover: z.array(RectSchema).min(1).max(400),
+    text: z.string().max(20000),
+    original: z.string().max(20000),
+    face: FaceSchema,
+    bold: z.boolean(),
+    italic: z.boolean(),
+    size: num.min(2).max(200),
+    color: ColorSchema,
+    bg: ColorSchema,
+    lineHeight: num.min(1).max(600),
+    firstBaseline: num.min(0).max(600),
+    /** The PDF's own font name, e.g. "BAAAAA+Carlito-Bold" (shown to the user). */
+    srcFont: z.string().max(200),
+  }),
 ]);
 export type Annotation = z.infer<typeof AnnotationSchema>;
 export type AnnotationKind = Annotation["kind"];
 export type Rect = z.infer<typeof RectSchema>;
 export type FontName = z.infer<typeof FontSchema>;
+export type Face = z.infer<typeof FaceSchema>;
 
 const IdSchema = z.string().min(1).max(64);
 

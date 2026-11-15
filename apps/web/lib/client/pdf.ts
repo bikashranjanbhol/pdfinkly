@@ -22,6 +22,8 @@ export async function openPdf(src: Uint8Array | string, password?: string): Prom
   const task = m.getDocument({
     ...(typeof src === "string" ? { url: src } : { data: src.slice() }),
     ...(password ? { password } : {}),
+    // Keep font names/flags on the main thread: the Edit text tool shows them and matches fonts.
+    fontExtraProperties: true,
   });
   return task.promise;
 }

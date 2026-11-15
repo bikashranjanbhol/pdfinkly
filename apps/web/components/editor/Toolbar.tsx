@@ -3,13 +3,14 @@
 import { useRef } from "react";
 import {
   IconArrow, IconEllipse, IconEraser, IconHighlight, IconImage, IconNote, IconPen, IconRect, IconRedo,
-  IconSelect, IconSign, IconText, IconUndo,
+  IconEditText, IconSelect, IconSign, IconText, IconUndo,
 } from "../icons";
 import { useEditor, type Tool } from "./store";
 
 const TOOLS: { id: Tool; label: string; Icon: (p: { size?: number }) => React.JSX.Element; hint: string; modes: ("edit" | "sign")[] }[] = [
   { id: "select", label: "Select", Icon: IconSelect, hint: "Click an item to select it. Drag to move; use the corner to resize.", modes: ["edit", "sign"] },
-  { id: "text", label: "Text", Icon: IconText, hint: "Click on the page to add a text box.", modes: ["edit", "sign"] },
+  { id: "edittext", label: "Edit text", Icon: IconEditText, hint: "Hover over the PDF's own text to see its font, then click to edit it. The original text is removed from the file when you save.", modes: ["edit"] },
+  { id: "text", label: "Add text", Icon: IconText, hint: "Click on the page to add a text box.", modes: ["edit", "sign"] },
   { id: "highlight", label: "Highlight", Icon: IconHighlight, hint: "Drag over text to highlight it.", modes: ["edit"] },
   { id: "draw", label: "Draw", Icon: IconPen, hint: "Draw freehand on the page.", modes: ["edit"] },
   { id: "rect", label: "Box", Icon: IconRect, hint: "Drag to draw a rectangle.", modes: ["edit"] },

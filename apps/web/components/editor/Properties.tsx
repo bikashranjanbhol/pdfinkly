@@ -1,9 +1,18 @@
 "use client";
 
-import { newId, type Annotation, type PlacedAnnotation } from "@pdfinkly/shared";
+import { describeFont, matchFont, newId, type Annotation, type Face, type PlacedAnnotation } from "@pdfinkly/shared";
 import { describe, translate } from "./annotations";
 import { useEditor } from "./store";
 import { toolHint } from "./Toolbar";
+
+const FACE_LABEL: Record<Face, string> = {
+  Carlito: "Carlito (Calibri-compatible)",
+  Caladea: "Caladea (Cambria-compatible)",
+  Helvetica: "Helvetica / Arial",
+  TimesRoman: "Times",
+  Courier: "Courier",
+};
+const METRIC_TWIN: Partial<Record<Face, string>> = { Carlito: "Calibri", Caladea: "Cambria", Helvetica: "Arial", TimesRoman: "Times" };
 
 const COLORS = ["#18181B", "#B91C1C", "#1D4ED8", "#15803D", "#C2410C"];
 const HIGHLIGHTS = ["#FACC15", "#4ADE80", "#60A5FA", "#F472B6"];
@@ -34,11 +43,11 @@ export function Properties({ annotations }: { annotations: PlacedAnnotation[] })
   const update = (annot: Annotation) => sel && apply({ op: "annot.update", id: sel.id, annot });
 
   const colorOf = (a: Annotation) =>
-    a.kind === "text" || a.kind === "ink" ? a.color : a.kind === "highlight" ? a.color : "stroke" in a ? a.stroke : null;
+    a.kind === "text" || a.kind === "ink" || a.kind === "replace" ? a.color : a.kind === "highlight" ? a.color : "stroke" in a ? a.stroke : null;
   function setColor(c: string) {
     if (!sel) return;
     const a = sel.annot;
-    if (a.kind === "text" || a.kind === "ink" || a.kind === "highlight") update({ ...a, color: c });
+    if (a.kind === "text" || a.kind === "ink" || a.kind === "highlight" || a.kind === "replace") update({ ...a, color: c });
     else if ("stroke" in a) update({ ...a, stroke: c });
   }
 
@@ -69,6 +78,41 @@ export function Properties({ annotations }: { annotations: PlacedAnnotation[] })
               </>
             );
           })()}
+          {sel.annot.kind === "replace" && (() => {
+            const a = sel.annot;
+            const orig = matchFont(a.srcFont);
+            const substituted = orig.face !== a.face || orig.family.toLowerCase().replace(/\s/g, "") !== a.face.toLowerCase();
+            return (
+              <>
+                <div className="rounded-[10px] border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px]">
+                  <div className="text-zinc-500">Font in the PDF</div>
+                  <div className="font-semibold text-ink">{describeFont(a.srcFont, a.size)}</div>
+                  <div className="text-zinc-500">{orig.subset ? "Embedded (only the characters used)" : "Embedded or standard font"}</div>
+                  {substituted && (
+                    <p className="mt-1.5 text-zinc-600">Redrawn with <b>{FACE_LABEL[a.face]}</b>{METRIC_TWIN[a.face] && orig.family.toLowerCase().includes(METRIC_TWIN[a.face]!.toLowerCase()) ? ", which has identical letter widths" : ", the closest available match"}.</p>
+                  )}
+                </div>
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Typeface
+                  <select className="field h-10" value={a.face} onChange={(e) => update({ ...a, face: e.target.value as Face })}>
+                    {(Object.keys(FACE_LABEL) as Face[]).map((f) => <option key={f} value={f}>{FACE_LABEL[f]}</option>)}
+                  </select>
+                </label>
+                <div className="flex gap-2" role="group" aria-label="Style">
+                  <button type="button" aria-pressed={a.bold} onClick={() => update({ ...a, bold: !a.bold })}
+                    className={`min-h-10 flex-1 rounded-[10px] border text-sm font-bold ${a.bold ? "border-brand-600 bg-brand-50 text-brand-800" : "border-zinc-300"}`}>Bold</button>
+                  <button type="button" aria-pressed={a.italic} onClick={() => update({ ...a, italic: !a.italic })}
+                    className={`min-h-10 flex-1 rounded-[10px] border text-sm italic ${a.italic ? "border-brand-600 bg-brand-50 text-brand-800" : "border-zinc-300"}`}>Italic</button>
+                </div>
+                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-zinc-700">
+                  Size (pt)
+                  <input className="field h-10" type="number" min={2} max={200} step={0.5} value={a.size}
+                    onChange={(e) => { const n = Number(e.target.value); if (n >= 2 && n <= 200) update({ ...a, size: n, lineHeight: Math.round(a.lineHeight * (n / a.size) * 100) / 100 }); }} />
+                </label>
+                <button type="button" className="btn-secondary min-h-10 text-sm" onClick={() => useEditor.getState().setEditingText(sel.id)}>Edit the words</button>
+              </>
+            );
+          })()}
           {sel.annot.kind === "note" && (() => {
             const a = sel.annot;
             return (
@@ -79,9 +123,15 @@ export function Properties({ annotations }: { annotations: PlacedAnnotation[] })
             );
           })()}
           {colorOf(sel.annot) && (
-            <Swatches label="Color" value={colorOf(sel.annot)!} options={sel.annot.kind === "highlight" ? HIGHLIGHTS : COLORS} onChange={setColor} />
+            <Swatches label="Color" value={colorOf(sel.annot)!}
+              options={sel.annot.kind === "highlight" ? HIGHLIGHTS : COLORS.includes(colorOf(sel.annot)!.toUpperCase()) ? COLORS : [colorOf(sel.annot)!.toUpperCase(), ...COLORS.slice(0, 4)]}
+              onChange={setColor} />
           )}
-          <div className="flex gap-2">
+          {sel.annot.kind === "replace" ? (
+            <button type="button" className="btn-danger min-h-10 text-sm" onClick={() => { apply({ op: "annot.delete", id: sel.id }); select(null); }}>
+              Restore original text
+            </button>
+          ) : <div className="flex gap-2">
             <button type="button" className="btn-secondary min-h-10 flex-1 text-sm"
               onClick={() => { const id = newId(); apply({ op: "annot.add", id, page: sel.page, annot: translate(sel.annot, 12, -12) }); select(id); }}>
               Duplicate
@@ -89,7 +139,7 @@ export function Properties({ annotations }: { annotations: PlacedAnnotation[] })
             <button type="button" className="btn-danger min-h-10 flex-1 text-sm" onClick={() => { apply({ op: "annot.delete", id: sel.id }); select(null); }}>
               Delete
             </button>
-          </div>
+          </div>}
         </section>
       ) : (
         <section aria-labelledby="style-h" className="flex flex-col gap-4">

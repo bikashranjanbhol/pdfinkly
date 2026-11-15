@@ -16,6 +16,8 @@
     "@auth/drizzle-adapter": "^1.11.3",
     "@aws-sdk/client-s3": "^3.1169.0",
     "@aws-sdk/s3-request-presigner": "^3.1169.0",
+    "@fontsource/caladea": "5.3.0",
+    "@fontsource/carlito": "5.3.0",
     "@pdfinkly/db": "workspace:*",
     "@pdfinkly/shared": "workspace:*",
     "@vercel/blob": "2.9.0",

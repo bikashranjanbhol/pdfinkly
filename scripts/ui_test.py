@@ -71,7 +71,7 @@ def main():
         page.mouse.move(box["x"] + 90, box["y"] + 80); page.mouse.down()
         page.mouse.move(box["x"] + 400, box["y"] + 110, steps=5); page.mouse.up()
         # Text
-        tools.get_by_role("button", name="Text", exact=True).click()
+        tools.get_by_role("button", name="Add text", exact=True).click()
         page.mouse.click(box["x"] + 120, box["y"] + 300)
         page.keyboard.type("Payment due within 15 days")
         page.mouse.click(box["x"] + 500, box["y"] + 700)  # clicking outside an open text box commits it

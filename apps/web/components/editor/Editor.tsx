@@ -1,6 +1,15 @@
 "use client";
 
 import Link from "next/link";
+// Faces used to redraw edited PDF text (metric-compatible with Calibri / Cambria).
+import "@fontsource/carlito/latin-400.css";
+import "@fontsource/carlito/latin-700.css";
+import "@fontsource/carlito/latin-400-italic.css";
+import "@fontsource/carlito/latin-700-italic.css";
+import "@fontsource/caladea/latin-400.css";
+import "@fontsource/caladea/latin-700.css";
+import "@fontsource/caladea/latin-400-italic.css";
+import "@fontsource/caladea/latin-700-italic.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deriveModel, newId, OperationsSchema, type FileSummary, type Operation } from "@pdfinkly/shared";
@@ -200,9 +209,15 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   }, [dialog]);
 
   /* ------------------------------------------------------------ actions */
+  const exportWarnings = useRef<string[]>([]);
   async function exportBytes(): Promise<Uint8Array> {
-    return runExport({ base: doc!.baseBytes, ops: effectiveOps(useEditor.getState()), external: doc!.extBytes });
+    exportWarnings.current = [];
+    return runExport(
+      { base: doc!.baseBytes, ops: effectiveOps(useEditor.getState()), external: doc!.extBytes },
+      { onWarning: (w) => exportWarnings.current.push(w) },
+    );
   }
+  const withWarnings = (msg: string) => [msg, ...exportWarnings.current].join(" ");
 
   async function download() {
     if (!doc) return;
@@ -214,6 +229,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
     setBusy("export");
     try {
       saveBytes(await exportBytes(), doc.file.name);
+      if (exportWarnings.current.length) setNotice(withWarnings("Downloaded."));
     } catch (e) {
       setNotice(e instanceof Error ? `Couldn't create the PDF: ${e.message}` : "Couldn't create the PDF.");
     } finally {
@@ -235,7 +251,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
       await uploadNewVersion(fileId, bytes, doc.baseVersionId, model.pages.length);
       useEditor.getState().reset([], 0);
       await load();
-      setNotice("Saved as a new version.");
+      setNotice(withWarnings("Saved as a new version."));
     } catch (e) {
       setNotice(e instanceof ApiFailure ? e.message : e instanceof Error ? `Couldn't save: ${e.message}` : "Couldn't save.");
     } finally {

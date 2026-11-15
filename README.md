@@ -27,6 +27,29 @@ Browser ──(edit ops, autosave)──▶ Next.js API on Vercel ──▶ Post
   (03:00 IST) then deletes them and their storage objects. Vercel Hobby allows one cron run a day; on Pro you can
   make it hourly in `apps/web/vercel.json`.
 
+## Editing the PDF's own text
+
+The **Edit text** tool works on text that's already in the PDF, not just text you add.
+
+- **Font detection.** Hover over any text to see its real font, size and whether the font is embedded
+  (e.g. "Calibri Bold · 11 pt · embedded (partial)"). Names and flags come from PDF.js; text and background
+  colours are sampled from the rendered page.
+- **Paragraph editing.** Click a paragraph to edit it in place. Lines are grouped into paragraphs by font,
+  size, left edge and steady line spacing; a bold label next to regular text stays a separate block, so
+  editing one keeps the other's style.
+- **True removal on save.** `packages/shared/src/contentstream.ts` reads the page's content stream, tracks
+  the text state (fonts, Tm/Td/TJ, Tc/Tw/Tz, CTM) to place every glyph, and rewrites the text operators so the
+  original glyphs are gone while everything else keeps its exact position. The new text is then drawn on the
+  original baselines. Nothing is left hidden underneath (unlike a white box).
+- **Font matching.** The embedded font usually holds only the characters the document used, so new text is
+  drawn with the closest face: Carlito for Calibri and Caladea for Cambria (identical letter widths, OFL),
+  Helvetica for Arial and other sans fonts, Times for serif fonts, Courier for monospace.
+- **Tested producers:** Chrome, LibreOffice/Word-style TrueType, pdfLaTeX (Type 1, kerned), wkhtmltopdf.
+
+Limits: scanned pages need OCR first; rotated text and text inside Form XObjects isn't removed (it's covered
+and the user is warned); Hindi and other complex scripts aren't supported for redrawing yet; a paragraph
+re-wraps inside its own box but doesn't push the content below it down.
+
 ## Repository layout
 
 ```
@@ -80,6 +103,7 @@ pnpm typecheck
 # With the app running (pnpm build && pnpm start):
 BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smoke-test.mjs   # 20 API checks
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
+python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
 ```
 
 The UI test uploads a PDF, adds a highlight, text, a drawing and a signature, checks autosave, undo/redo and

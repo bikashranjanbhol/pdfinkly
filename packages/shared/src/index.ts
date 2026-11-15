@@ -81,3 +81,4 @@ export interface UploadTicket {
   headers: Record<string, string>;
   expiresAt: string;
 }
+export * from "./fonts";

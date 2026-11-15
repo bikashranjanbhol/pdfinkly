@@ -2,8 +2,9 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { newId, type Annotation, type PageEntry, type PlacedAnnotation } from "@pdfinkly/shared";
-import { boundsOf, hasRect, HtmlAnnotation, ShapeSvg, translate, FONT_CSS } from "./annotations";
+import { describeFont, FACE_METRICS, matchFont, newId, type Annotation, type PageEntry, type PlacedAnnotation, type Rect } from "@pdfinkly/shared";
+import { boundsOf, FACE_CSS, hasRect, HtmlAnnotation, ShapeSvg, translate, FONT_CSS } from "./annotations";
+import { sampleColors, textBlocks, type TextBlock } from "./textBlocks";
 import { cssToRect, makeGeom, rectToCss, round, toPdf, type PageGeom } from "./geometry";
 import { useEditor } from "./store";
 
@@ -107,6 +108,17 @@ export function PageView({
   const wrap = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [blocks, setBlocks] = useState<TextBlock[] | null>(null);
+  const [hoverBlock, setHoverBlock] = useState<string | null>(null);
+  const pageProxy = info?.page ?? null;
+  const wantsBlocks = interactive && tool === "edittext" && !!pageProxy;
+
+  useEffect(() => {
+    if (!wantsBlocks || !pageProxy) return;
+    let cancelled = false;
+    textBlocks(pageProxy).then((b) => { if (!cancelled) setBlocks(b); });
+    return () => { cancelled = true; };
+  }, [wantsBlocks, pageProxy]);
 
   useEffect(() => {
     const el = wrap.current;
@@ -138,6 +150,32 @@ export function PageView({
     return id;
   };
 
+  /** Turn a paragraph of the PDF's own text into an editable "replace" annotation. */
+  function startEdit(block: TextBlock) {
+    if (!g) return;
+    const canvas = wrap.current?.querySelector("canvas") ?? null;
+    const colors = canvas ? sampleColors(canvas, rectToCss(g, block.rect), g.width) : { fg: "#000000", bg: "#FFFFFF" };
+    const m = matchFont(block.font.raw, { serif: block.font.serif, mono: block.font.mono });
+    const id = add({
+      kind: "replace",
+      rect: block.rect,
+      cover: block.cover,
+      text: block.text,
+      original: block.text,
+      face: m.face,
+      bold: m.bold,
+      italic: m.italic,
+      size: block.size,
+      color: colors.fg,
+      bg: colors.bg,
+      lineHeight: block.lineHeight,
+      firstBaseline: block.firstBaseline,
+      srcFont: block.font.raw.slice(0, 200),
+    }, true);
+    freshReplace.add(id);
+    setHoverBlock(null);
+  }
+
   function onPointerDown(e: React.PointerEvent) {
     if (!interactive || e.button !== 0 || !g) return;
     // A click outside an open text box finishes that box; it doesn't start a new one.
@@ -150,6 +188,9 @@ export function PageView({
     const [x, y] = point(e);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     switch (tool) {
+      case "edittext":
+        select(null);
+        return;
       case "select":
         select(null);
         setEditingText(null);
@@ -259,7 +300,7 @@ export function PageView({
     >
       <PageCanvas info={info} g={g} visible={visible} />
       <svg className="pointer-events-none absolute inset-0" width={g.width} height={g.height} aria-hidden="true">
-        {shown.map((p) => <ShapeSvg key={p.id} a={p.annot} g={g} />)}
+        {shown.map((p) => <ShapeSvg key={p.id} a={p.id === editingText && p.annot.kind === "replace" ? { ...p.annot, text: "" } : p.annot} g={g} />)}
         {drag?.kind === "rect" && (
           tool === "ellipse"
             ? <ellipse cx={(drag.x0 + drag.x1) / 2} cy={(drag.y0 + drag.y1) / 2} rx={Math.abs(drag.x1 - drag.x0) / 2} ry={Math.abs(drag.y1 - drag.y0) / 2} fill="none" stroke={style.stroke} strokeWidth={style.width * g.scale} />
@@ -295,8 +336,8 @@ export function PageView({
                 const [x, y] = point(e);
                 setDrag({ kind: "move", id: p.id, x0: x, y0: y, x1: x, y1: y });
               }}
-              onDoubleClick={() => p.annot.kind === "text" && setEditingText(p.id)}
-              onKeyDown={(e) => e.key === "Enter" && p.annot.kind === "text" && setEditingText(p.id)}
+              onDoubleClick={() => (p.annot.kind === "text" || p.annot.kind === "replace") && setEditingText(p.id)}
+              onKeyDown={(e) => e.key === "Enter" && (p.annot.kind === "text" || p.annot.kind === "replace") && setEditingText(p.id)}
             />
           );
         })}
@@ -324,10 +365,58 @@ export function PageView({
         );
       })()}
 
+      {interactive && tool === "edittext" && !editingText && (
+        <>
+          {blocks?.filter((b) => !shown.some((p) => p.annot.kind === "replace" && overlaps(p.annot.cover, b.cover))).map((b) => {
+            const c = rectToCss(g, b.rect);
+            const hot = hoverBlock === b.key;
+            return (
+              <div
+                key={b.key}
+                role="button"
+                tabIndex={0}
+                aria-label={`Edit text: ${b.text.slice(0, 60)} (${describeFont(b.font.raw, b.size, b.font)})`}
+                className={`absolute cursor-text rounded-[2px] ${hot ? "outline outline-[1.5px] outline-brand-600" : "outline-dashed outline-1 outline-brand-600/25"}`}
+                style={{ left: c.left - 2, top: c.top - 2, width: c.width + 4, height: c.height + 4 }}
+                onPointerEnter={() => setHoverBlock(b.key)}
+                onPointerLeave={() => setHoverBlock((k) => (k === b.key ? null : k))}
+                onFocus={() => setHoverBlock(b.key)}
+                onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                onClick={() => startEdit(b)}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), startEdit(b))}
+              >
+                {hot && <FontChip block={b} />}
+              </div>
+            );
+          })}
+          {shown.filter((p) => p.annot.kind === "replace").map((p) => {
+            const c = rectToCss(g, boundsOf(p.annot));
+            return (
+              <div key={p.id} role="button" tabIndex={0} aria-label="Edit this text again"
+                className="absolute cursor-text rounded-[2px] outline outline-1 outline-emerald-600/60 hover:outline-[1.5px] hover:outline-emerald-600"
+                style={{ left: c.left - 2, top: c.top - 2, width: c.width + 4, height: c.height + 4 }}
+                onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                onClick={() => { select(p.id); setEditingText(p.id); }}
+                onKeyDown={(e) => e.key === "Enter" && (select(p.id), setEditingText(p.id))} />
+            );
+          })}
+          {wantsBlocks && blocks === null && (
+            <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-zinc-900/80 px-2 py-1 text-xs text-white">Finding text…</div>
+          )}
+          {blocks !== null && blocks.length === 0 && (
+            <div className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit max-w-[90%] rounded-lg bg-zinc-900/85 px-3 py-2 text-center text-[13px] text-white">
+              No editable text on this page. If it&apos;s a scan, the text is part of an image.
+            </div>
+          )}
+        </>
+      )}
+
       {editingText && (() => {
         const p = shown.find((x) => x.id === editingText);
-        if (!p || p.annot.kind !== "text") return null;
-        return <TextEditor key={p.id} placed={p} annot={p.annot} g={g} />;
+        if (!p) return null;
+        if (p.annot.kind === "text") return <TextEditor key={p.id} placed={p} annot={p.annot} g={g} />;
+        if (p.annot.kind === "replace") return <ReplaceEditor key={p.id} placed={p} annot={p.annot} g={g} />;
+        return null;
       })()}
     </div>
   );
@@ -390,6 +479,89 @@ function TextEditor({ placed, annot, g }: { placed: PlacedAnnotation; annot: Ext
       }}
       className="absolute resize-none overflow-hidden border-[1.5px] border-brand-600 bg-white/90 outline-none"
       style={{ left: c.left, top: c.top, width: c.width, height: c.height, padding: 2 * g.scale, fontFamily: FONT_CSS[annot.font], fontSize: annot.size * g.scale, lineHeight: 1.2, color: annot.color }}
+    />
+  );
+}
+
+/** Edits created by the current click; if the user leaves the text unchanged they're dropped again. */
+const freshReplace = new Set<string>();
+
+const overlaps = (a: Rect[], b: Rect[]) =>
+  a.some((r) => b.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h));
+
+function FontChip({ block }: { block: TextBlock }) {
+  const m = matchFont(block.font.raw, block.font);
+  const detail = !block.font.embedded ? "not embedded" : m.subset ? "embedded (partial)" : "embedded";
+  return (
+    <div className="pointer-events-none absolute bottom-full left-0 z-10 mb-1.5 flex w-max max-w-[320px] flex-col rounded-lg bg-zinc-900 px-2.5 py-1.5 text-left text-xs leading-snug text-white shadow-lg">
+      <span className="font-semibold">{describeFont(block.font.raw, block.size, block.font)}</span>
+      <span className="text-zinc-300">{detail} · click to edit</span>
+    </div>
+  );
+}
+
+type ReplaceAnnot = Extract<Annotation, { kind: "replace" }>;
+
+function ReplaceEditor({ placed, annot, g }: { placed: PlacedAnnotation; annot: ReplaceAnnot; g: PageGeom }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const c = rectToCss(g, annot.rect);
+  const m = FACE_METRICS[annot.face];
+  const S = annot.size * g.scale;
+  const L = annot.lineHeight * g.scale;
+  // Put the textarea's first baseline exactly on the original first baseline.
+  const baselineInLine = (L - (m.ascent + m.descent) * S) / 2 + m.ascent * S;
+  const top = c.top + annot.firstBaseline * g.scale - baselineInLine;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.style.height = `${el.scrollHeight}px`;
+    const t = window.setTimeout(() => { if (document.activeElement !== el) el.focus(); }, 0);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  function commit() {
+    const el = ref.current;
+    const { apply, setEditingText, select } = useEditor.getState();
+    setEditingText(null);
+    if (!el) return;
+    const text = el.value.replace(/\r\n?/g, "\n");
+    if (freshReplace.has(placed.id) && text === annot.original) {
+      // Opened and closed without changes: nothing to save.
+      apply({ op: "annot.delete", id: placed.id });
+      select(null);
+    } else if (text !== annot.text) {
+      apply({ op: "annot.update", id: placed.id, annot: { ...annot, text } });
+    }
+    freshReplace.delete(placed.id);
+  }
+
+  return (
+    <textarea
+      ref={ref}
+      aria-label="Edit text"
+      defaultValue={annot.text}
+      spellCheck
+      onBlur={commit}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) (e.target as HTMLTextAreaElement).blur();
+      }}
+      onInput={(e) => {
+        const el = e.currentTarget;
+        el.style.height = "auto";
+        el.style.height = `${el.scrollHeight}px`;
+      }}
+      className="absolute z-20 resize-none overflow-hidden rounded-[2px] p-0 outline outline-[1.5px] outline-offset-2 outline-brand-600"
+      style={{
+        left: c.left, top, width: c.width + 2, minHeight: c.height,
+        background: annot.bg, color: annot.color, fontFamily: FACE_CSS[annot.face], fontSize: S,
+        fontWeight: annot.bold ? 700 : 400, fontStyle: annot.italic ? "italic" : "normal",
+        lineHeight: `${L}px`, whiteSpace: "pre-wrap", border: "none",
+      }}
     />
   );
 }

@@ -4,7 +4,7 @@ import { create } from "zustand";
 import type { FontName, Operation } from "@pdfinkly/shared";
 
 export type Tool =
-  | "select" | "text" | "highlight" | "draw" | "rect" | "ellipse" | "arrow"
+  | "select" | "edittext" | "text" | "highlight" | "draw" | "rect" | "ellipse" | "arrow"
   | "image" | "note" | "signature" | "whiteout";
 
 export type Mode = "edit" | "organize" | "sign";

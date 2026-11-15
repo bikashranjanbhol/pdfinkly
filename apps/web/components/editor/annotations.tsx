@@ -1,6 +1,6 @@
 "use client";
 
-import type { Annotation, Rect } from "@pdfinkly/shared";
+import { layoutReplaceLines, type Annotation, type Face, type Rect } from "@pdfinkly/shared";
 import { rectToCss, toCss, type PageGeom } from "./geometry";
 
 export const FONT_CSS: Record<string, string> = {
@@ -8,6 +8,29 @@ export const FONT_CSS: Record<string, string> = {
   TimesRoman: "'Times New Roman', Times, serif",
   Courier: "'Courier New', Courier, monospace",
 };
+
+/** CSS stacks for the faces edited text is redrawn in (metric-compatible fallbacks first). */
+export const FACE_CSS: Record<Face, string> = {
+  Helvetica: "Helvetica, Arial, 'Liberation Sans', Arimo, sans-serif",
+  TimesRoman: "'Times New Roman', Times, 'Liberation Serif', Tinos, serif",
+  Courier: "'Courier New', Courier, 'Liberation Mono', Cousine, monospace",
+  Carlito: "Carlito, Calibri, sans-serif",
+  Caladea: "Caladea, Cambria, serif",
+};
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+/** Width of `text` in PDF points when set in the given face at `size` pt. */
+export function measureFace(text: string, face: Face, bold: boolean, italic: boolean, size: number): number {
+  if (typeof document === "undefined") return text.length * size * 0.5;
+  measureCtx ??= document.createElement("canvas").getContext("2d");
+  if (!measureCtx) return text.length * size * 0.5;
+  measureCtx.font = `${italic ? "italic " : ""}${bold ? 700 : 400} 100px ${FACE_CSS[face]}`;
+  return (measureCtx.measureText(text).width / 100) * size;
+}
+
+type ReplaceAnnot = Extract<Annotation, { kind: "replace" }>;
+export const replaceLines = (a: ReplaceAnnot) =>
+  layoutReplaceLines(a.text, (s) => measureFace(s, a.face, a.bold, a.italic, a.size), Math.max(a.rect.w, a.size));
 
 export const hasRect = (a: Annotation): a is Extract<Annotation, { rect: Rect }> => "rect" in a;
 
@@ -39,9 +62,10 @@ export function translate(a: Annotation, dx: number, dy: number): Annotation {
 
 const LABEL: Record<Annotation["kind"], string> = {
   text: "Text", highlight: "Highlight", ink: "Drawing", rect: "Rectangle", ellipse: "Ellipse", line: "Line",
-  arrow: "Arrow", image: "Image", signature: "Signature", note: "Note", whiteout: "White-out",
+  arrow: "Arrow", image: "Image", signature: "Signature", note: "Note", whiteout: "White-out", replace: "Edited text",
 };
 export const describe = (a: Annotation) =>
+  a.kind === "replace" ? `Edited · ${a.text.split("\n")[0]?.slice(0, 40) || "(deleted text)"}` :
   a.kind === "text" ? a.text.split("\n")[0] || "Text" : a.kind === "note" ? `Note · ${a.text.slice(0, 40) || "empty"}` : LABEL[a.kind];
 
 /** Shapes drawn in one SVG layer (CSS px space). */
@@ -91,6 +115,30 @@ export function ShapeSvg({ a, g }: { a: Annotation; g: PageGeom }) {
           })}
         </g>
       );
+    case "replace": {
+      // In the editor the original glyphs are still on the canvas, so patch them with the
+      // background colour. The exported file deletes them for real.
+      const pad = 0.6;
+      return (
+        <g>
+          {a.cover.map((r, i) => {
+            const c = rectToCss(g, { x: r.x - pad, y: r.y - pad, w: r.w + pad * 2, h: r.h + pad * 2 });
+            return <rect key={i} x={c.left} y={c.top} width={c.width} height={c.height} fill={a.bg} />;
+          })}
+          {a.text && replaceLines(a).map((line, i) => {
+            if (!line) return null;
+            const [x, y] = toCss(g, a.rect.x, a.rect.y + a.rect.h - a.firstBaseline - i * a.lineHeight);
+            return (
+              <text key={i} x={x} y={y} fill={a.color} fontFamily={FACE_CSS[a.face]} fontSize={a.size * g.scale}
+                fontWeight={a.bold ? 700 : 400} fontStyle={a.italic ? "italic" : "normal"} style={{ whiteSpace: "pre" }}
+                transform={g.rotation ? `rotate(${g.rotation} ${x} ${y})` : undefined}>
+                {line}
+              </text>
+            );
+          })}
+        </g>
+      );
+    }
     default:
       return null;
   }
