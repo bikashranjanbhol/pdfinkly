@@ -3,7 +3,7 @@ import { signOutAction } from "@/app/actions";
 import { getActor } from "@/lib/server/actor";
 import { Logo } from "./Logo";
 
-export async function AppHeader({ active }: { active?: "files" | "upload" | "account" }) {
+export async function AppHeader({ active }: { active?: "files" | "upload" | "scan" | "account" }) {
   const actor = await getActor().catch(() => null);
   const link = (key: typeof active, href: string, label: string) => (
     <Link
@@ -23,6 +23,7 @@ export async function AppHeader({ active }: { active?: "files" | "upload" | "acc
         <nav aria-label="App" className="flex gap-1 text-[15px] font-medium">
           {link("files", "/files", "My files")}
           {link("upload", "/upload", "Upload")}
+          {link("scan", "/scan", "Scan")}
           {actor && !actor.isGuest && link("account", "/account", "Account")}
         </nav>
         <div className="ml-auto flex items-center gap-3">

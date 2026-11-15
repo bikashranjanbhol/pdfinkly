@@ -138,6 +138,30 @@ white margin. Pages turn to match each picture. JPEG and PNG are embedded as the
 phone photos stored sideways (EXIF orientation) and other formats are redrawn upright first
 (`lib/client/images.ts`, `packages/shared/src/images.ts`).
 
+## Scanning documents (`/scan`)
+
+Phone photos of paper documents become clean, scanned-looking PDFs, entirely in the browser
+(`packages/shared/src/scan.ts`, run in a Web Worker by `apps/web/lib/client/scan/`):
+
+- **Finding the page**: two kinds of candidate outline: the bright, colourless region (paper against a darker or
+  colourful surface) and four-sided shapes made from the strongest straight edges (a Hough transform), which
+  shadows and light tables don't fool. The outline whose sides best follow real edges wins; the corners are then
+  sharpened at higher resolution to a fraction of a pixel. If nothing convincing is found the user is asked to drag
+  the corners (with a magnifier; arrow keys work too).
+- **Straightening**: a perspective warp. The page's true proportions come from a pinhole-camera model (the focal
+  length is recovered from how the edges converge), then snap to A4 or Letter when within 4%.
+- **Looks**: *Auto* divides out the paper colour estimated on a coarse grid (shadows, uneven light and colour casts
+  go, the page turns white, ink gets darker, colour kept); *Greyscale*; *Black & white* (one threshold on the
+  evened-out page, specks removed); *Original*.
+- Pages can be reordered, rotated, removed and adjusted one by one, with a look of their own. The PDF is A4, Letter
+  or the scan's own shape, optionally squeezed under a size limit (the Compress engine), then downloaded or saved
+  to My files and opened in the editor (for OCR, signing, redaction…).
+- Photos are read upright from their EXIF orientation. Nothing is uploaded unless the user saves.
+
+`scripts/make-scan-photos.py` makes realistic test photos (a rendered PDF page seen by a tilted pinhole camera on
+wood, granite, a bedsheet or a light desk, with uneven light, a soft shadow, noise and JPEG); a few are in
+`packages/shared/test/fixtures/photos/`.
+
 ## Compression
 
 Download ▾ → *Compress…* (`lib/client/compress.ts`, `packages/shared/src/compress.ts`). The worker lists every
@@ -231,6 +255,7 @@ python3 scripts/ui_textedit.py                                                  
 python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
 python3 scripts/ui_images.py                                                             # Pictures → PDF: order, page size, EXIF rotation
 python3 scripts/ui_convert.py                                                            # Convert: Word, PowerPoint, images, Excel, scan → Word
+python3 scripts/ui_scan.py                                                               # Scan: photos → pages, looks, corners, PDF (desktop + phone)
 python3 scripts/ui_compress.py                                                           # Compress: preset and a size limit
 python3 scripts/ui_security.py                                                           # Protect with password, unlock on upload
 python3 scripts/ui_stamps.py                                                             # Page stamps: dialog, preview, saved file

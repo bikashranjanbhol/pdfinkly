@@ -3,7 +3,7 @@ Needs the mock Razorpay (scripts/mock-razorpay.mjs) and the app started with
   RAZORPAY_KEY_ID=rzp_test_mock RAZORPAY_KEY_SECRET=mocksecret RAZORPAY_WEBHOOK_SECRET=whsecret
   RAZORPAY_API_BASE=http://127.0.0.1:4010/v1
 Usage: python3 scripts/ui_billing.py"""
-import hashlib, hmac, json, os, sys, time, urllib.error, urllib.request
+import hashlib, hmac, json, os, sys, time, urllib.error, urllib.request, uuid
 from testutil import sign_in, sql
 from playwright.sync_api import sync_playwright, expect
 
@@ -18,7 +18,10 @@ def use_mock_checkout(ctx):
     ctx.route("https://checkout.razorpay.com/v1/checkout.js", lambda r: r.fulfill(
         status=200, content_type="application/javascript", body=urllib.request.urlopen(MOCK + "/checkout.js").read()))
 
+RUN = uuid.uuid4().hex[:8]  # event ids are remembered across runs
+
 def webhook(event, payload, event_id, secret=WEBHOOK_SECRET):
+    event_id = f"{event_id}-{RUN}"
     body = json.dumps({"entity": "event", "event": event, "payload": payload}).encode()
     sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     req = urllib.request.Request(BASE + "/api/billing/webhook", data=body, method="POST", headers={
@@ -176,21 +179,21 @@ def main():
         # --- Webhooks: renewal, duplicates, bad signatures
         end = int(time.time()) + 60 * 86400
         payload = {"subscription": {"entity": {"id": sub_id, "status": "active", "current_start": int(time.time()), "current_end": end}},
-                   "payment": {"entity": {"id": "pay_renewal_1", "amount": 19900, "currency": "INR", "status": "captured", "invoice_id": "inv_1", "created_at": int(time.time())}}}
+                   "payment": {"entity": {"id": f"pay_renewal_{RUN}", "amount": 19900, "currency": "INR", "status": "captured", "invoice_id": "inv_1", "created_at": int(time.time())}}}
         status, res = webhook("subscription.charged", payload, "evt_renew_1")
         assert status == 200 and res == {"ok": True}, (status, res)
         status, res = webhook("subscription.charged", payload, "evt_renew_1")
         assert res.get("duplicate") is True, res
         status, _ = webhook("subscription.charged", payload, "evt_renew_2", secret="wrong")
         assert status == 400, status
-        assert sql("SELECT count(*) FROM payments WHERE provider_payment_id = 'pay_renewal_1'")[0][0] == "1"
+        assert sql(f"SELECT count(*) FROM payments WHERE provider_payment_id = 'pay_renewal_{RUN}'")[0][0] == "1"
         days = float(sql(f"SELECT extract(epoch FROM plan_expires_at - now()) / 86400 FROM users WHERE id = '{uid}'")[0][0])
         assert 62.9 < days < 63.1, days  # 60 days paid + 3 days' grace
         print("  ✓ webhooks: a renewal extends Pro; duplicates and bad signatures are ignored")
 
         # Day pass whose browser closed before confirming: the webhook switches it on
         o = page.request.post(BASE + "/api/billing/checkout", data={"priceId": "pro_day_inr"}).json()
-        status, _ = webhook("payment.captured", {"payment": {"entity": {"id": "pay_bg_1", "amount": 4900, "currency": "INR", "status": "captured", "order_id": o["id"], "created_at": int(time.time())}}}, "evt_pass_1")
+        status, _ = webhook("payment.captured", {"payment": {"entity": {"id": f"pay_bg_{RUN}", "amount": 4900, "currency": "INR", "status": "captured", "order_id": o["id"], "created_at": int(time.time())}}}, "evt_pass_1")
         assert status == 200
         assert sql(f"SELECT status FROM subscriptions WHERE provider_subscription_id = '{o['id']}'")[0][0] == "active"
         print("  ✓ a day pass paid with the tab closed is switched on by the webhook")

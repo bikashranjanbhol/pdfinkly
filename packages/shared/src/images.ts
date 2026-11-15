@@ -14,6 +14,10 @@ export interface ImagesToPdfOptions {
   /** White space around the picture on A4/Letter pages, points. */
   margin: number;
   title?: string;
+  /** For "fit": pixels per inch of the pictures (default 150). */
+  dpi?: number;
+  /** For "fit": make every page's longer side this many points instead (proportions kept). */
+  fitLongSide?: number;
 }
 
 const SIZES = { a4: [595.28, 841.89], letter: [612, 792] } as const;
@@ -29,7 +33,7 @@ export async function imagesToPdf(images: readonly PageImage[], opts: ImagesToPd
     let pw: number, ph: number, margin: number;
     if (opts.pageSize === "fit") {
       // The picture's own size at 150 dpi (so phone photos don't make metre-wide pages), no margin.
-      const k = 72 / 150;
+      const k = opts.fitLongSide ? opts.fitLongSide / Math.max(img.width, img.height) : 72 / (opts.dpi ?? 150);
       [pw, ph, margin] = [Math.max(72, img.width * k), Math.max(72, img.height * k), 0];
     } else {
       const [w, h] = SIZES[opts.pageSize];

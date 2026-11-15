@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import {
-  IconArrow, IconHighlight, IconLock, IconPages, IconPen, IconSign, IconUpload, IconText,
+  IconArrow, IconCamera, IconHighlight, IconLock, IconPages, IconPen, IconSign, IconUpload, IconText,
 } from "@/components/icons";
 
 const TOOLS = [
+  { href: "/scan", icon: IconCamera, title: "Scan with your phone", text: "Photograph a document and get a clean, scanned-looking PDF." },
   { href: "/upload", icon: IconPen, title: "Edit and annotate", text: "Add text, highlights, shapes, images and notes." },
   { href: "/upload", icon: IconSign, title: "Fill and sign", text: "Complete forms and add a drawn or typed signature." },
   { href: "/upload", icon: IconPages, title: "Organize pages", text: "Reorder, rotate, delete and insert pages." },

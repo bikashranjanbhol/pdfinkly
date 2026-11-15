@@ -25,6 +25,13 @@ export const razorpay = {
   },
 };
 
+/** A failed Razorpay call; shown to people as "try again". */
+export class RazorpayError extends HttpError {
+  constructor(public readonly status: number) {
+    super("PAYMENTS_UNAVAILABLE", "The payment service didn't respond. Please try again.");
+  }
+}
+
 const base = () => (process.env.RAZORPAY_API_BASE ?? "https://api.razorpay.com/v1").replace(/\/$/, "");
 
 async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
@@ -39,7 +46,7 @@ async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Pr
   const json = (await res.json().catch(() => ({}))) as T & { error?: { description?: string } };
   if (!res.ok) {
     console.error(`[razorpay] ${method} ${path} → ${res.status}`, json?.error?.description);
-    throw new HttpError("PAYMENTS_UNAVAILABLE", "The payment service didn't respond. Please try again.");
+    throw new RazorpayError(res.status);
   }
   return json;
 }

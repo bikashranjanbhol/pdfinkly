@@ -13,7 +13,7 @@ import {
 import type { Actor } from "./actor";
 import type { BillingSummary, CheckoutStart } from "@/lib/billing/types";
 import { HttpError } from "./http";
-import { fromUnix, razorpay, rzp, type RzpPayment, type RzpSubscription } from "./razorpay";
+import { fromUnix, razorpay, RazorpayError, rzp, type RzpPayment, type RzpSubscription } from "./razorpay";
 import {
   accessEnd,
   checkoutSignatureValid,
@@ -43,11 +43,11 @@ async function getPrice(id: string): Promise<Price> {
   return p;
 }
 
-/** The Razorpay plan behind a recurring price, created on first use. */
-async function razorpayPlanFor(price: Price): Promise<string> {
+/** The Razorpay plan behind a recurring price, created on first use (or again, if `fresh`). */
+async function razorpayPlanFor(price: Price, fresh = false): Promise<string> {
   const mode = razorpay.mode;
   const known = price.razorpayPlanIds[mode];
-  if (known) return known;
+  if (known && !fresh) return known;
   const plan = await rzp.createPlan({
     period: price.period === "year" ? "yearly" : "monthly",
     amount: price.amountMinor,
@@ -98,11 +98,16 @@ export async function startCheckout(actor: Actor, priceId: string): Promise<Chec
       )
       .limit(1);
     if (live) throw new HttpError("ALREADY_SUBSCRIBED", "You already have a Pro subscription.");
-    const sub = await rzp.createSubscription({
-      planId: await razorpayPlanFor(price),
-      totalCount: totalCount(price.period as "month" | "year"),
-      notes,
-    });
+    const create = async (fresh: boolean) =>
+      rzp.createSubscription({ planId: await razorpayPlanFor(price, fresh), totalCount: totalCount(price.period as "month" | "year"), notes });
+    let sub;
+    try {
+      sub = await create(false);
+    } catch (e) {
+      // The stored plan may no longer exist at Razorpay (e.g. the account was reset): make it again, once.
+      if (!(e instanceof RazorpayError && e.status === 400 && price.razorpayPlanIds[razorpay.mode])) throw e;
+      sub = await create(true);
+    }
     await db.insert(subscriptions).values({
       userId,
       planId: price.planId,

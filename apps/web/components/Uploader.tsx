@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ApiFailure, formatBytes } from "@/lib/client/api";
 import { uploadNewPdf } from "@/lib/client/pdf";
-import { IconCheck, IconLock, IconUpload } from "./icons";
+import { IconCheck, IconLock, IconUpload, IconCamera } from "./icons";
 
 type Item = {
   key: string;
@@ -149,12 +149,19 @@ export function Uploader() {
       <p className="-mt-2 flex items-center gap-2 text-[13px] text-zinc-600">
         <IconLock size={16} />Files go straight to private storage over HTTPS. Guest files are deleted automatically.
       </p>
+      <Link href="/scan" className="card -mt-2 flex items-center gap-3 px-4 py-3 text-[15px] text-ink hover:border-brand-600">
+        <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-brand-50 text-brand-600"><IconCamera /></span>
+        <span><span className="font-semibold">Scan a paper document</span> <span className="text-zinc-600">with your phone camera: we crop, straighten and clean it up.</span></span>
+      </Link>
 
       {pictures.length > 0 && (
         <section aria-labelledby="pics" className="card flex flex-col gap-4 p-5">
           <div>
             <h2 id="pics" className="text-base font-semibold">Make a PDF from {pictures.length === 1 ? "1 picture" : `${pictures.length} pictures`}</h2>
-            <p className="text-[13px] text-zinc-600">One page per picture, in this order. Done in your browser before upload.</p>
+            <p className="text-[13px] text-zinc-600">
+              One page per picture, in this order. Done in your browser before upload. Photos of documents?{" "}
+              <Link href="/scan" className="font-semibold text-brand-700">Scan them</Link> to crop, straighten and clean them up.
+            </p>
           </div>
           <ol className="flex flex-wrap gap-3">
             {pictures.map((p, i) => (
