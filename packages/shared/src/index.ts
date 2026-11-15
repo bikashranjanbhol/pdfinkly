@@ -85,3 +85,4 @@ export * from "./fonts";
 export * from "./ocrTypes";
 export * from "./visual";
 export * from "./pii";
+export * from "./stampLayout";

@@ -2,11 +2,12 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { describeFont, FACE_METRICS, matchFont, newId, OCR_FONT_NAME, type Annotation, type PageEntry, type PlacedAnnotation, type Rect } from "@pdfinkly/shared";
+import { describeFont, FACE_METRICS, matchFont, newId, OCR_FONT_NAME, type Annotation, type DocModel, type PageEntry, type PlacedAnnotation, type Rect } from "@pdfinkly/shared";
 import { boundsOf, FACE_CSS, hasRect, HtmlAnnotation, ShapeSvg, translate, FONT_CSS } from "./annotations";
 import { sampleColors, textBlocks, type TextBlock } from "./textBlocks";
 import { cssToRect, makeGeom, rectToCss, round, toPdf, type PageGeom } from "./geometry";
 import { useEditor } from "./store";
+import { StampOverlay } from "./StampOverlay";
 
 /* ------------------------------------------------------------ documents */
 
@@ -90,12 +91,19 @@ export function PageView({
   annotations,
   scale,
   interactive,
+  stamps,
+  pageNo = 1,
+  pageCount = 1,
 }: {
   entry: PageEntry;
   label: string;
   annotations: PlacedAnnotation[];
   scale: number;
   interactive: boolean;
+  /** Page stamps to preview (watermark, …), with this page's position in the document. */
+  stamps?: DocModel["stamps"];
+  pageNo?: number;
+  pageCount?: number;
 }) {
   const info = usePageInfo(entry);
   const tool = useEditor((s) => s.tool);
@@ -317,6 +325,7 @@ export function PageView({
       onPointerCancel={() => setDrag(null)}
     >
       <PageCanvas info={info} g={g} visible={visible} />
+      {stamps && <StampOverlay stamps={stamps} g={g} pageNo={pageNo} pageCount={pageCount} />}
       <svg className="pointer-events-none absolute inset-0" width={g.width} height={g.height} aria-hidden="true">
         {shown.map((p) => <ShapeSvg key={p.id} a={p.id === editingText && p.annot.kind === "replace" ? { ...p.annot, text: "" } : p.annot} g={g} />)}
         {drag?.kind === "rect" && (

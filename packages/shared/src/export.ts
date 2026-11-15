@@ -24,6 +24,7 @@ import { drawOcrLayer, OCR_FONT_NAME, type OcrLine } from "./ocr";
 import { removeOcrLayer, removeTextFromPageDetailed } from "./pdftext";
 import { applyRedactedImages, redactionsByPage, redactPage, type RedactImageResult, type RedactStats } from "./redact";
 import { overlaps } from "./contentstream";
+import { drawStamps } from "./stamps";
 export { planRedactionImages, type RedactImageJob, type RedactImageResult } from "./redact";
 
 export interface ExportInput {
@@ -298,6 +299,9 @@ export async function exportPdf({ base, ops, external = {}, loadFont, onWarning,
       drawOcrLayer(out, page, lines);
     }
   }
+  // Watermark and other page stamps, on the pages in their final order.
+  await drawStamps(out, model.pages.flatMap((p) => { const pg = pagesByRef.get(p.ref); return pg ? [pg] : []; }), model, onWarning);
+
   // Redact last, so nothing drawn above (edited text, OCR text, stamps) survives under a mark.
   if (redacting) {
     const total: RedactStats = { glyphs: 0, paths: 0, inlineImages: 0, imagesCleaned: 0, imagesRemoved: 0, forms: 0, annots: 0 };

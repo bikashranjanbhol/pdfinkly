@@ -27,6 +27,7 @@ import { HistoryDrawer } from "./HistoryDrawer";
 import { Organize } from "./Organize";
 import { DocsContext, PageCanvas, PageView, usePageInfo } from "./PageView";
 import { Properties } from "./Properties";
+import { StampsDialog } from "./StampsDialog";
 import { ShareDialog } from "./ShareDialog";
 import { SignatureDialog } from "./SignatureDialog";
 import { readFormFields, SignPanel, type FormField } from "./SignPanel";
@@ -66,7 +67,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "export" | "save" | "merge">(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr">(null);
+  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr" | "stamps">(null);
   const [scanHint, setScanHint] = useState(false);
   const ocrRequest = useEditor((s) => s.ocrRequest);
   useEffect(() => { if (ocrRequest) setDialog("ocr"); }, [ocrRequest]);
@@ -463,7 +464,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
         {busy === "save" && savingOcr.current && <div role="status" className="bg-brand-600 px-4 py-1 text-center text-xs text-white">Adding the recognised text and saving a new version…</div>}
         {busy === "export" && <div role="status" className="bg-brand-600 px-4 py-1 text-center text-xs text-white">Preparing your PDF…</div>}
 
-        {mode !== "organize" && <Toolbar onNeedSignature={() => setDialog("signature")} pageLabel={`${model.pages.length} page${model.pages.length > 1 ? "s" : ""}`} />}
+        {mode !== "organize" && <Toolbar onNeedSignature={() => setDialog("signature")} onOpenStamps={() => setDialog("stamps")} stampCount={Object.keys(model.stamps).length} pageLabel={`${model.pages.length} page${model.pages.length > 1 ? "s" : ""}`} />}
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {mode === "sign" && <SignPanel fields={doc.fields} model={model} onCreateSignature={() => setDialog("signature")} />}
@@ -475,7 +476,8 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
               <div className="flex flex-col items-center gap-6 px-4 py-7">
                 {model.pages.map((p, i) => (
                   <div key={p.ref} id={`page-${p.ref}`} className="flex flex-col items-center gap-1.5">
-                    <PageView entry={p} label={`Page ${i + 1}`} scale={zoom} interactive annotations={model.annotations.filter((a) => a.page === p.ref)} />
+                    <PageView entry={p} label={`Page ${i + 1}`} scale={zoom} interactive annotations={model.annotations.filter((a) => a.page === p.ref)}
+                      stamps={model.stamps} pageNo={i + 1} pageCount={model.pages.length} />
                     <div className="flex items-center gap-1 text-xs text-zinc-500">
                       <button type="button" className="btn-ghost min-h-8 px-1.5" title="Rotate left" aria-label={`Rotate page ${i + 1} left`}
                         onClick={() => useEditor.getState().apply({ op: "page.rotate", page: p.ref, degrees: 270 })}><IconRotateL size={16} /></button>
@@ -513,6 +515,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
             }}
           />
         )}
+        {dialog === "stamps" && <StampsDialog model={model} onClose={() => setDialog(null)} />}
         {dialog === "share" && <ShareDialog fileId={fileId} fileName={doc.file.name} isGuest={isGuest} hasUnsaved={unsaved > 0} onClose={() => setDialog(null)} />}
         {dialog === "history" && (
           <HistoryDrawer

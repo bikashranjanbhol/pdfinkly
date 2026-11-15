@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import {
   IconArrow, IconEllipse, IconEraser, IconHighlight, IconImage, IconNote, IconPen, IconRect, IconRedo,
-  IconEditText, IconRedact, IconSelect, IconSign, IconText, IconUndo,
+  IconEditText, IconRedact, IconSelect, IconSign, IconStamp, IconText, IconUndo,
 } from "../icons";
 import { useEditor, type Tool } from "./store";
 
@@ -25,7 +25,7 @@ const TOOLS: { id: Tool; label: string; Icon: (p: { size?: number }) => React.JS
 
 export const toolHint = (t: Tool) => TOOLS.find((x) => x.id === t)?.hint ?? "";
 
-export function Toolbar({ onNeedSignature, pageLabel }: { onNeedSignature: () => void; pageLabel: string }) {
+export function Toolbar({ onNeedSignature, onOpenStamps, stampCount = 0, pageLabel }: { onNeedSignature: () => void; onOpenStamps?: () => void; stampCount?: number; pageLabel: string }) {
   const tool = useEditor((s) => s.tool);
   const mode = useEditor((s) => s.mode);
   const zoom = useEditor((s) => s.zoom);
@@ -78,6 +78,17 @@ export function Toolbar({ onNeedSignature, pageLabel }: { onNeedSignature: () =>
       </div>
       <input ref={imageInput} type="file" accept="image/png,image/jpeg" className="sr-only" tabIndex={-1} aria-hidden="true"
         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void onImage(f); }} />
+      {mode === "edit" && (
+        <>
+          <span className="h-8 w-px bg-zinc-200" />
+          <button type="button" onClick={onOpenStamps} title="Watermark on every page"
+            className="relative flex h-[52px] min-w-14 flex-col items-center justify-center gap-0.5 rounded-[10px] px-1.5 text-zinc-700 hover:bg-zinc-100">
+            <IconStamp size={20} />
+            <span className="text-[11px] font-semibold">Stamps</span>
+            {stampCount > 0 && <span className="absolute right-1 top-1 size-2 rounded-full bg-brand-600" aria-label={`${stampCount} active`} />}
+          </button>
+        </>
+      )}
       <span className="h-8 w-px bg-zinc-200" />
       <div className="flex gap-0.5">
         <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo} className="btn-ghost min-h-10 px-2.5"><IconUndo /></button>

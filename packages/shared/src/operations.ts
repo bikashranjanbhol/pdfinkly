@@ -84,6 +84,32 @@ export type Face = z.infer<typeof FaceSchema>;
 
 const IdSchema = z.string().min(1).max(64);
 
+/** Pages a stamp applies to: "" = all, or a list like "1-3, 6, 9-" (1-based, final page order). */
+export const PageRangeSchema = z.string().max(200).regex(/^[\d\s,\-]*$/, "Use page numbers like 1-3, 6");
+
+export const WatermarkSchema = z.object({
+  kind: z.literal("watermark"),
+  text: z.string().max(200),
+  /** A logo instead of (or with) text: PNG or JPEG. */
+  image: DataUrlSchema.optional(),
+  /** Font size in points; for an image, its width as a percentage of the page width. */
+  size: z.number().min(4).max(400),
+  bold: z.boolean(),
+  color: ColorSchema,
+  opacity: z.number().min(0.05).max(1),
+  /** Degrees counter-clockwise, as seen on the page. */
+  angle: z.number().min(-180).max(180),
+  layout: z.enum(["center", "tile"]),
+  /** Behind the page's content, or on top of it. */
+  layer: z.enum(["over", "under"]),
+  pages: PageRangeSchema,
+});
+export type Watermark = z.infer<typeof WatermarkSchema>;
+
+export const StampSchema = z.discriminatedUnion("kind", [WatermarkSchema]);
+export type Stamp = z.infer<typeof StampSchema>;
+export type StampKey = Stamp["kind"];
+
 export const OperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("annot.add"), id: IdSchema, page: PageRefSchema, annot: AnnotationSchema }),
   z.object({ op: z.literal("annot.update"), id: IdSchema, annot: AnnotationSchema }),
@@ -107,6 +133,8 @@ export const OperationSchema = z.discriminatedUnion("op", [
     pages: z.array(PageRefSchema).min(1).max(5000),
   }),
   z.object({ op: z.literal("form.set"), field: z.string().min(1).max(500), value: z.union([z.string().max(5000), z.boolean()]) }),
+  /** Set (or with null, remove) a document-wide stamp: one of each kind. */
+  z.object({ op: z.literal("stamp.set"), key: z.enum(["watermark"]), stamp: StampSchema.nullable() }),
 ]);
 export type Operation = z.infer<typeof OperationSchema>;
 export const OperationsSchema = z.array(OperationSchema).max(20000);
@@ -135,6 +163,8 @@ export interface DocModel {
   pages: PageEntry[];
   annotations: PlacedAnnotation[];
   form: Record<string, string | boolean>;
+  /** Document-wide stamps (watermark, …) by kind. */
+  stamps: Partial<Record<StampKey, Stamp>>;
   /** True when pages were moved, rotated, deleted or inserted. */
   structureChanged: boolean;
   /** Versions merged in, which export needs the bytes of. */
@@ -152,6 +182,7 @@ export function deriveModel(basePageCount: number, ops: readonly Operation[]): D
   }));
   const annots = new Map<string, PlacedAnnotation>();
   const form: Record<string, string | boolean> = {};
+  const stamps: Partial<Record<StampKey, Stamp>> = {};
   const external = new Set<string>();
   let structureChanged = false;
 
@@ -213,6 +244,10 @@ export function deriveModel(basePageCount: number, ops: readonly Operation[]): D
         structureChanged = true;
         break;
       }
+      case "stamp.set":
+        if (op.stamp && op.stamp.kind === op.key) stamps[op.key] = op.stamp;
+        else delete stamps[op.key];
+        break;
       case "form.set":
         form[op.field] = op.value;
         break;
@@ -225,6 +260,7 @@ export function deriveModel(basePageCount: number, ops: readonly Operation[]): D
     pages,
     annotations: [...annots.values()],
     form,
+    stamps,
     structureChanged,
     externalVersions: [...external].filter((v) => stillUsed.has(v)),
   };

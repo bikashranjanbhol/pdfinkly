@@ -29,6 +29,7 @@ export const IconImage = make("M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9h.01");
 export const IconNote = make("M5 4h14v11l-5 5H5zM14 20v-5h5");
 export const IconSign = make("M3 17c3-3 5-9 7-9s-1 9 1 9 3-4 5-4 1 4 3 4h2M3 21h18");
 export const IconEraser = make("M4 6h16v4H4zM4 14h10v4H4z");
+export const IconStamp = make("M9 3h6v5l3 4H6l3-4zM5 15h14v3H5zM4 21h16");
 export const IconRedact = make("M3 5h18v5H3zM3 14h7M14 14h7M3 19h11");
 export const IconTrash = make("M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3");
 export const IconRotateL = make("M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5");

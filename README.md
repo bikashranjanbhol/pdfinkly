@@ -84,6 +84,16 @@ for OCR and there is no server cost.
 Limits: about 2–3 s per page on a laptop; handwriting, tables and very low-quality scans recognise poorly;
 recognised Hindi is searchable and copyable but can't be edited yet.
 
+## Page stamps
+
+**Stamps** (Edit toolbar) adds document-wide stamps, stored as one `stamp.set` operation per kind and drawn
+on export in the page's visual frame, so they read upright on rotated pages
+(`packages/shared/src/stamps.ts`, layout shared with the preview in `stampLayout.ts`).
+
+- **Watermark:** text and/or a logo; size, colour, opacity, angle; once in the middle or repeated across the
+  page; on top of the content or behind it (drawn into its own content stream placed first); all pages or a
+  range like `1-3, 6`. Text uses Helvetica, so only Latin characters for now (others are dropped, with a warning).
+
 ## Redaction
 
 The **Redact** tool deletes what's under a marked area from the file; it doesn't just cover it.
@@ -161,6 +171,7 @@ BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smo
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
 python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
 python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
+python3 scripts/ui_stamps.py                                                             # Page stamps: dialog, preview, saved file
 python3 scripts/ui_redact.py                                                             # Redaction: find, mark, save, check file + pixels
 ```
 
