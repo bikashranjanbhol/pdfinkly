@@ -94,3 +94,14 @@ export async function applyCompression(bytes: Uint8Array, results: readonly Comp
   }
   return doc.save({ useObjectStreams: true, addDefaultPage: false, updateFieldAppearances: false });
 }
+
+/** A copy of the PDF with every text glyph removed (drawings and images stay), e.g. as slide backgrounds. */
+export async function stripText(bytes: Uint8Array): Promise<Uint8Array> {
+  const { removeTextFromPageDetailed } = await import("./pdftext");
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const all = [{ id: "all", rects: [{ x: -1e9, y: -1e9, w: 2e9, h: 2e9 }] }];
+  for (const page of doc.getPages()) {
+    try { removeTextFromPageDetailed(doc, page, all); } catch { /* keep the page as it is */ }
+  }
+  return doc.save();
+}

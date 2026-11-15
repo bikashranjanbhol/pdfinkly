@@ -26,7 +26,7 @@ import { applyRedactedImages, redactionsByPage, redactPage, type RedactImageResu
 import { overlaps } from "./contentstream";
 import { drawStamps } from "./stamps";
 export { planRedactionImages, type RedactImageJob, type RedactImageResult } from "./redact";
-export { applyCompression, planCompression, type CompressJob, type CompressResult } from "./compress";
+export { applyCompression, planCompression, stripText, type CompressJob, type CompressResult } from "./compress";
 
 export interface ExportInput {
   /** Bytes of the base version the operations were made against. */

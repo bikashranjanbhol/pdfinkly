@@ -8,7 +8,8 @@ export type WorkerMessage =
   | ({ type: "export" } & WorkerInput)
   | { type: "plan"; base: Uint8Array; ops: ExportInput["ops"]; external?: ExportInput["external"] }
   | { type: "compressPlan"; bytes: Uint8Array }
-  | { type: "compressApply"; bytes: Uint8Array; results: CompressResult[] };
+  | { type: "compressApply"; bytes: Uint8Array; results: CompressResult[] }
+  | { type: "stripText"; bytes: Uint8Array };
 
 export type WorkerReply =
   | { ok: true; bytes: Uint8Array; warnings: string[] }

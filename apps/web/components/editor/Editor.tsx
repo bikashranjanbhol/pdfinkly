@@ -30,6 +30,7 @@ import { Properties } from "./Properties";
 import { StampsDialog } from "./StampsDialog";
 import { ProtectDialog } from "./ProtectDialog";
 import { CompressDialog } from "./CompressDialog";
+import { ConvertDialog } from "./ConvertDialog";
 import type { Protection } from "@/lib/client/qpdf";
 import { ShareDialog } from "./ShareDialog";
 import { SignatureDialog } from "./SignatureDialog";
@@ -70,7 +71,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "export" | "save" | "merge">(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr" | "stamps" | "protect" | "compress">(null);
+  const [dialog, setDialog] = useState<null | "share" | "history" | "signature" | "ocr" | "stamps" | "protect" | "compress" | "convert">(null);
   const [downloadMenu, setDownloadMenu] = useState(false);
   const [scanHint, setScanHint] = useState(false);
   const ocrRequest = useEditor((s) => s.ocrRequest);
@@ -485,6 +486,8 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
                         onClick={() => { setDownloadMenu(false); setDialog("protect"); }}>Download with password…</button>
                       <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
                         onClick={() => { setDownloadMenu(false); setDialog("compress"); }}>Compress…</button>
+                      <button type="button" role="menuitem" className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-zinc-100"
+                        onClick={() => { setDownloadMenu(false); setDialog("convert"); }}>Convert to Word, Excel…</button>
                     </div>
                   </>
                 )}
@@ -571,6 +574,7 @@ export function Editor({ fileId, isGuest }: { fileId: string; isGuest: boolean }
             }}
           />
         )}
+        {dialog === "convert" && <ConvertDialog fileName={doc.file.name} getBytes={compressSource} onClose={() => setDialog(null)} />}
         {dialog === "compress" && (
           <CompressDialog fileName={doc.file.name} getBytes={compressSource} onClose={() => setDialog(null)}
             onDownload={(b) => saveBytes(b, doc.file.name.replace(/\.pdf$/i, "") + " (compressed).pdf")}

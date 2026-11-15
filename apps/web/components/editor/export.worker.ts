@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { applyCompression, exportPdf, ExportError, planCompression, planRedactionImages } from "@pdfinkly/shared/export";
+import { applyCompression, exportPdf, ExportError, planCompression, planRedactionImages, stripText } from "@pdfinkly/shared/export";
 import { fontLoader, type WorkerMessage } from "./exportShared";
 
 // Runs pdf-lib off the main thread so big files don't freeze the editor.
@@ -9,6 +9,11 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     if (e.data.type === "compressPlan") {
       const compressJobs = await planCompression(e.data.bytes);
       post({ ok: true, compressJobs }, compressJobs.map((j) => j.pdf.buffer));
+      return;
+    }
+    if (e.data.type === "stripText") {
+      const compressed = await stripText(e.data.bytes);
+      post({ ok: true, compressed }, [compressed.buffer]);
       return;
     }
     if (e.data.type === "compressApply") {

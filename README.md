@@ -111,6 +111,25 @@ Both run in the browser with qpdf 12 compiled to WebAssembly (`@neslinesli93/qpd
   upload list. Files that open without a password but have locked permissions need the permissions (owner)
   password; qpdf's report of which password was supplied is checked. The decrypted copy is what's stored.
 
+## Converting to Word, Excel, PowerPoint and images
+
+Download ▾ → *Convert to Word, Excel…* — runs in the browser (`lib/client/convert/`).
+
+- **Layout** (`layout.ts`): paragraphs come from the Edit text tool's block detection; lines from different
+  blocks on one baseline become one paragraph with several runs (so "**Email:** value" stays together), wrapped
+  lines are rejoined (hyphens too), big gaps become tabs. Fonts map to Office families (Calibri, Cambria, Arial,
+  Times New Roman, Courier New, or the PDF's own family), colours are sampled from the rendered page.
+- **Word** (`docx`): one section per page at the page's size; paragraphs with indentation, spacing and exact line
+  spacing; pictures cropped from the rendered page, inline in reading order. It reflows like a normal document.
+  Lines, shapes and table borders aren't carried over.
+- **Excel** (hand-written OOXML via `fflate`): a sheet per page; rows by baseline, columns from the x ranges table
+  rows cover; amounts (`1,24,500.00`, `₹ 500`, `(1,200)`, `18%`) become numbers with matching formats.
+- **PowerPoint** (`pptxgenjs`): a slide per page; the background is the page rendered with its text removed (the
+  worker strips glyphs with the same engine as Edit text), and each paragraph is an editable text box on top.
+- **Images:** JPG or PNG per page at 72/150/300 dpi, zipped when there's more than one page.
+- **Scanned pages:** offered OCR (English/Hindi) first; the recognised text layer is what gets converted, so a scan
+  becomes an editable Word document.
+
 ## Compression
 
 Download ▾ → *Compress…* (`lib/client/compress.ts`, `packages/shared/src/compress.ts`). The worker lists every
@@ -202,6 +221,7 @@ BASE_URL=http://localhost:3000 DATABASE_URL=… CRON_SECRET=… node scripts/smo
 python3 scripts/ui_test.py                                                               # browser flow (Playwright)
 python3 scripts/ui_textedit.py                                                           # Edit text flow (Playwright)
 python3 scripts/ui_ocr.py                                                                # OCR flow, English + Hindi (Playwright)
+python3 scripts/ui_convert.py                                                            # Convert: Word, PowerPoint, images, Excel, scan → Word
 python3 scripts/ui_compress.py                                                           # Compress: preset and a size limit
 python3 scripts/ui_security.py                                                           # Protect with password, unlock on upload
 python3 scripts/ui_stamps.py                                                             # Page stamps: dialog, preview, saved file

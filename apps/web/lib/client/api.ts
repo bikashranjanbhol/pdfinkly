@@ -70,8 +70,8 @@ export function formatWhen(iso: string): string {
 }
 
 /** Save bytes as a file with the given name. */
-export function saveBytes(bytes: Uint8Array, name: string) {
-  const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "application/pdf" }));
+export function saveBytes(bytes: Uint8Array, name: string, type = "application/pdf") {
+  const url = URL.createObjectURL(new Blob([bytes.slice()], { type }));
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
