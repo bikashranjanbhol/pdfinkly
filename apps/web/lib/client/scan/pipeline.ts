@@ -73,6 +73,8 @@ export interface Rendered {
   width: number;
   height: number;
   thumb: Blob;
+  /** A screen-sized copy in the look being shown, for previewing the page. */
+  view: Blob;
 }
 
 /** JPEG quality per look: black & white compresses well, colour needs a little more. */
@@ -97,8 +99,10 @@ export async function render(
   const q = insetQuad(quad.map((p) => ({ x: p.x * img.width, y: p.y * img.height })) as Quad);
   let page = applyFilter(warp(img, q, size.width, size.height), filter);
   page = rotateImg(page, turns);
-  const small = resize(page, 420);
-  const thumbImg = thumbFilter && thumbFilter !== filter ? applyFilter(small, thumbFilter) : small; // a new image; `page` is untouched
-  const [jpeg, thumb] = [await encode(page, QUALITY[filter]), await encode(thumbImg, 0.75)];
-  return { jpeg, width: page.width, height: page.height, thumb };
+  const screen = resize(page, 1400);
+  const shown = thumbFilter && thumbFilter !== filter ? applyFilter(screen, thumbFilter) : screen; // a new image; `page` is untouched
+  const jpeg = await encode(page, QUALITY[filter]);
+  const view = await encode(shown, 0.85);
+  const thumb = await encode(resize(shown, 420), 0.75);
+  return { jpeg, width: page.width, height: page.height, thumb, view };
 }

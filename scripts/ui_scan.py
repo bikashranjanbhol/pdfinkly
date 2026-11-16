@@ -50,6 +50,33 @@ def main():
         page.screenshot(path=f"{OUT}/scan-02-pages.png", full_page=True)
         print("  ✓ three photos: two pages found and straightened (A4), one flagged")
 
+        # Preview: big, page by page, with its own look.
+        page.get_by_role("button", name="Preview page 1").click()
+        vw = page.get_by_role("dialog", name="Page 1 of 3")
+        expect(vw).to_be_visible()
+        w = vw.get_by_alt_text("Preview of page 1").evaluate("i => i.naturalWidth")
+        assert w >= 600, w  # the page at full size (these test photos are small), well above the thumbnail
+        vw.get_by_role("button", name="Next page").click()
+        expect(page.get_by_role("dialog", name="Page 2 of 3")).to_be_visible()
+        page.keyboard.press("ArrowLeft")
+        vw = page.get_by_role("dialog", name="Page 1 of 3")
+        expect(vw).to_be_visible()
+        vw.get_by_role("radio", name="Greyscale").click()
+        expect(vw.get_by_role("status")).to_have_count(0, timeout=60000)
+        expect(vw.get_by_role("radio", name="Greyscale")).to_have_attribute("aria-checked", "true")
+        col = vw.get_by_alt_text("Preview of page 1").evaluate("""i => { const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight;
+            const x = c.getContext('2d'); x.drawImage(i, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data;
+            let n = 0; for (let k = 0; k < d.length; k += 4) if (Math.abs(d[k] - d[k+2]) > 30) n++; return n; }""")
+        assert col == 0, col
+        vw.get_by_role("button", name="Zoom in").click()
+        expect(vw.get_by_role("button", name="Fit to screen")).to_be_visible()
+        page.screenshot(path=f"{OUT}/scan-02b-preview.png")
+        vw.get_by_role("radio", name="Same as all").click()
+        expect(vw.get_by_role("status")).to_have_count(0, timeout=60000)
+        page.keyboard.press("Escape")
+        expect(vw).to_be_hidden()
+        print("  ✓ preview: full size, next/previous, keyboard, zoom, a look for one page")
+
         # The cleaned-up page is white at the edges (no table) and has text.
         px = page.get_by_alt_text("Scanned page 1").evaluate("""i => { const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight;
             const x = c.getContext('2d'); x.drawImage(i, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data;
@@ -154,22 +181,44 @@ def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(BASE + "/scan")
         assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
-        # A camera photo stored sideways (EXIF): the page comes out upright.
+        # A camera photo stored sideways (EXIF): the page comes out upright, and is shown straight away.
         page.set_input_files("#scan-camera", photo("desk-exif.jpg"))
-        wait_ready(page, 1)
-        assert abs(thumb_ratio(page, 1) - 1.414) < 0.02, thumb_ratio(page, 1)
-        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
-        page.screenshot(path=f"{OUT}/scan-05-phone.png", full_page=True)
-        # A camera photo with no clear page: the corner editor opens by itself.
-        page.set_input_files("#scan-camera", photo("no-page.jpg"))
+        rv = page.get_by_role("dialog", name="Here's your scan")
+        expect(rv).to_be_visible(timeout=30000)
+        expect(rv.get_by_role("status")).to_have_count(0, timeout=60000)
+        img = rv.get_by_alt_text("Preview of page 1")
+        r = img.evaluate("i => i.naturalHeight / i.naturalWidth")
+        assert abs(r - 1.414) < 0.02, r
+        expect(rv.get_by_role("radiogroup", name="Look for this page")).to_be_visible()
+        page.screenshot(path=f"{OUT}/scan-05-phone-review.png")
+        print("  ✓ phone: camera photo turned upright and previewed straight away")
+
+        # Take next photo from the preview: no clear page → corners first, then the preview.
+        with page.expect_file_chooser() as fc:
+            rv.get_by_role("button", name="Take next photo").click()
+        fc.value.set_files(photo("no-page.jpg"))
         dlg = page.get_by_role("dialog", name="Adjust page 2")
         expect(dlg).to_be_visible(timeout=30000)
         expect(dlg.get_by_text("We couldn't find the page edges.")).to_be_visible()
         page.screenshot(path=f"{OUT}/scan-06-phone-corners.png")
         dlg.get_by_role("button", name="Whole photo").click()
         dlg.get_by_role("button", name="Apply").click()
+        expect(rv).to_be_visible(timeout=30000)
+        expect(rv.get_by_text("Page 2", exact=True)).to_be_visible()
+
+        # Retake replaces that page.
+        with page.expect_file_chooser() as fc:
+            rv.get_by_role("button", name="Retake").click()
+        fc.value.set_files(photo("light-desk.jpg"))
+        expect(rv).to_be_visible(timeout=30000)
+        expect(rv.get_by_role("status")).to_have_count(0, timeout=60000)
+        rv.get_by_role("button", name="Done").click()
+        expect(rv).to_be_hidden()
         wait_ready(page, 2)
-        print("  ✓ phone: camera photo turned upright; no page found → corner editor opens")
+        assert abs(thumb_ratio(page, 2) - 1.414) < 0.02
+        assert page.evaluate("document.scrollingElement.scrollWidth") <= 390
+        page.screenshot(path=f"{OUT}/scan-07-phone.png", full_page=True)
+        print("  ✓ phone: take next photo, fix corners, retake, all from the preview")
         browser.close()
 
     real = [e for e in errors if "favicon" not in e]

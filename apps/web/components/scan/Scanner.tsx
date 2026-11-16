@@ -9,6 +9,7 @@ import { IconBack, IconCamera, IconCrop, IconDownload, IconImage, IconPlus, Icon
 import { CornerEditor } from "./CornerEditor";
 import { FILTERS } from "./filters";
 import { PhoneLink, type ReceivedPage } from "./PhoneLink";
+import { PageViewer } from "./PageViewer";
 
 const FULL: Quad = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
@@ -27,6 +28,8 @@ interface Page {
   filter: ScanFilter | null;
   out?: Rendered;
   thumb?: string;
+  /** Screen-sized preview in the look being shown. */
+  view?: string;
   v: number;
   /** Arrived from a phone (already straightened). */
   fromPhone?: boolean;
@@ -70,6 +73,9 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
   const [filter, setFilterState] = useState<ScanFilter>("auto");
   const filterRef = useRef<ScanFilter>("auto");
   const [editing, setEditing] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ id: string; review: boolean } | null>(null);
+  /** A photo just taken with the camera: show it once it's ready (after fixing corners, if needed). */
+  const reviewId = useRef<string | null>(null);
   const [pageSize, setPageSize] = useState<"a4" | "letter" | "fit">("a4");
   const [limit, setLimit] = useState(0);
   const [name, setName] = useState(defaultName);
@@ -105,6 +111,7 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
       for (const p of pagesRef.current) {
         if (p.preview) URL.revokeObjectURL(p.preview);
         if (p.thumb) URL.revokeObjectURL(p.thumb);
+        if (p.view) URL.revokeObjectURL(p.view);
       }
     },
     [],
@@ -123,7 +130,8 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
       const cur = pagesRef.current.find((x) => x.id === id);
       if (!cur || cur.v !== v) return; // changed again meanwhile, or removed
       if (cur.thumb) URL.revokeObjectURL(cur.thumb);
-      patch(id, { status: "ready", out, thumb: URL.createObjectURL(out.thumb), error: undefined });
+      if (cur.view) URL.revokeObjectURL(cur.view);
+      patch(id, { status: "ready", out, thumb: URL.createObjectURL(out.thumb), view: URL.createObjectURL(out.view), error: undefined });
     } catch (e) {
       patch(id, { status: "error", error: e instanceof Error ? e.message : "Couldn't process this photo." });
     }
@@ -146,8 +154,12 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
         const a = await analysePhoto(p.file);
         if (!pagesRef.current.some((x) => x.id === p.id)) continue;
         patch(p.id, { quad: a.quad, detected: a.quad, found: a.found, photo: { width: a.width, height: a.height }, preview: URL.createObjectURL(a.preview) });
-        // A single photo from the camera where the page wasn't found: go straight to the corners.
-        if (fromCamera && !a.found && added.length === 1) setEditing(p.id);
+        // A single photo from the camera: show how it came out (if the page wasn't found, fix the corners first).
+        if (fromCamera && added.length === 1) {
+          reviewId.current = p.id;
+          if (a.found) setViewing({ id: p.id, review: true });
+          else setEditing(p.id);
+        }
         await renderOne(p.id);
       } catch (e) {
         patch(p.id, { status: "error", error: e instanceof Error ? e.message : "Couldn't read this photo." });
@@ -206,6 +218,7 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
     const p = pagesRef.current.find((x) => x.id === id);
     if (p?.preview) URL.revokeObjectURL(p.preview);
     if (p?.thumb) URL.revokeObjectURL(p.thumb);
+    if (p?.view) URL.revokeObjectURL(p.view);
     commit((ps) => ps.filter((x) => x.id !== id));
   }
 
@@ -360,8 +373,10 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
                 <li key={p.id} aria-label={`Page ${i + 1}`} className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-2">
                   <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-lg bg-zinc-100">
                     {p.thumb && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={p.thumb} alt={`Scanned page ${i + 1}`} className={`max-h-full max-w-full shadow ${p.status === "rendering" ? "opacity-50" : ""}`} />
+                      <button type="button" aria-label={`Preview page ${i + 1}`} className="flex size-full items-center justify-center" onClick={() => setViewing({ id: p.id, review: false })}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.thumb} alt={`Scanned page ${i + 1}`} className={`max-h-full max-w-full shadow ${p.status === "rendering" ? "opacity-50" : ""}`} />
+                      </button>
                     )}
                     {(p.status === "analysing" || p.status === "rendering") && (
                       <span role="status" className="absolute inset-x-2 bottom-2 rounded-md bg-white/90 px-2 py-1 text-center text-xs font-medium text-zinc-700">
@@ -449,6 +464,41 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
         </>
       )}
 
+      {viewing && pages.some((p) => p.id === viewing.id) && (
+        <PageViewer
+          pages={pages.map((p) => ({ id: p.id, view: p.view, status: p.status, error: p.error, filter: p.filter, canAdjust: !!p.preview }))}
+          index={pages.findIndex((p) => p.id === viewing.id)}
+          review={viewing.review}
+          showLook={!phoneMode}
+          inactive={!!editing}
+          onIndex={(i) => setViewing({ id: pages[i]!.id, review: false })}
+          onClose={() => { setViewing(null); reviewId.current = null; }}
+          onAdjust={(id) => setEditing(id)}
+          onRotate={(id) => {
+            const p = pagesRef.current.find((x) => x.id === id);
+            if (!p) return;
+            patch(id, { turns: (p.turns + 1) % 4 });
+            void renderOne(id);
+          }}
+          onRemove={(id) => {
+            const i = pagesRef.current.findIndex((x) => x.id === id);
+            remove(id);
+            const next = pagesRef.current[Math.min(i, pagesRef.current.length - 1)];
+            setViewing(next ? { id: next.id, review: false } : null);
+          }}
+          onFilter={(id, f) => { patch(id, { filter: f }); void renderOne(id); }}
+          onRetake={(id) => {
+            remove(id);
+            setViewing(null);
+            document.getElementById("scan-camera")?.click();
+          }}
+          onNext={() => {
+            setViewing(null);
+            document.getElementById("scan-camera")?.click();
+          }}
+        />
+      )}
+
       {editPage?.preview && (
         <CornerEditor
           pageNo={pages.indexOf(editPage) + 1}
@@ -462,6 +512,7 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
           onApply={(quad, f) => {
             patch(editPage.id, { quad, filter: f, found: true });
             setEditing(null);
+            if (reviewId.current === editPage.id && !viewing) setViewing({ id: editPage.id, review: true });
             void renderOne(editPage.id);
           }}
         />

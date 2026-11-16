@@ -8,6 +8,7 @@ const make = (d: string) => function Icon({ size = 20, className }: P) {
   return <svg {...base(size)} className={className}><path d={d} /></svg>;
 };
 
+export const IconZoom = make("M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5M11 8v6M8 11h6");
 export const IconCamera = make("M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z");
 export const IconCrop = make("M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14");
 export const IconUpload = make("M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3");

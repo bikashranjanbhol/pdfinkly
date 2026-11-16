@@ -153,6 +153,10 @@ Phone photos of paper documents become clean, scanned-looking PDFs, entirely in 
 - **Looks**: *Auto* divides out the paper colour estimated on a coarse grid (shadows, uneven light and colour casts
   go, the page turns white, ink gets darker, colour kept); *Greyscale*; *Black & white* (one threshold on the
   evened-out page, specks removed); *Original*.
+- **Preview**: tap a page to see it full size, as it will look (swipe or arrow keys between pages, zoom), and fix it
+  there: corners, rotation, its own look. A photo just taken with the camera opens in the preview straight away, with
+  Retake and Take next photo. On a phone scanning for a computer, the preview shows the cleaned-up look even though the
+  pages are sent in their original colours.
 - Pages can be reordered, rotated, removed and adjusted one by one, with a look of their own. The PDF is A4, Letter
   or the scan's own shape, optionally squeezed under a size limit (the Compress engine), then downloaded or saved
   to My files and opened in the editor (for OCR, signing, redaction…).

@@ -60,6 +60,17 @@ def main():
         print("  ✓ phone opens the link without signing in; computer shows it's connected")
 
         ph.set_input_files("#scan-camera", photo("desk-angle.jpg"))
+        rv = ph.get_by_role("dialog", name="Here's your scan")
+        expect(rv).to_be_visible(timeout=30000)
+        expect(rv.get_by_role("status")).to_have_count(0, timeout=60000)
+        expect(rv.get_by_role("radiogroup")).to_have_count(0)  # the look is chosen on the computer
+        pv = rv.get_by_alt_text("Preview of page 1").evaluate("""i => { const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight;
+            const x = c.getContext('2d'); x.drawImage(i, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data;
+            const at = (u, v) => { const k = (Math.floor(v * c.height) * c.width + Math.floor(u * c.width)) * 4; return (d[k] + d[k+1] + d[k+2]) / 3; };
+            return [at(.03,.03), at(.97,.03), at(.97,.97), at(.03,.97)]; }""")
+        assert min(pv) > 235, pv  # the preview shows the cleaned-up look, not the raw colours being sent
+        ph.screenshot(path=os.path.join(OUT, "phone-03a-review.png"))
+        rv.get_by_role("button", name="Done").click()
         wait_ready(ph, 1)
         ph.set_input_files("#scan-photos", photo("light-desk.jpg"))
         wait_ready(ph, 2)
@@ -114,6 +125,9 @@ def main():
         desk.get_by_role("button", name="Stop using your phone").click()
         expect(desk.get_by_role("heading", name="Scan with your phone")).to_have_count(0)
         ph.set_input_files("#scan-camera", photo("bed-tilted.jpg"))  # a striped bedsheet: found without help
+        rv = ph.get_by_role("dialog", name="Here's your scan")
+        expect(rv).to_be_visible(timeout=30000)
+        rv.get_by_role("button", name="Done").click()
         wait_ready(ph, 1)
         ph.get_by_role("button", name="Send to computer (1 page)").click()
         expect(ph.get_by_role("alert").filter(has_text="This link has expired or was closed")).to_be_visible(timeout=15000)
