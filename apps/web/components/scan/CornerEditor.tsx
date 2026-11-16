@@ -11,6 +11,8 @@ const FULL: Quad = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1
 /**
  * Drag the four corners onto the page's corners. A magnifier shows what's
  * under your finger; arrow keys move a focused corner (Shift for bigger steps).
+ * The result (straightened, in the chosen look) is shown beside the photo,
+ * or one tap away on a phone, and updates as corners and look change.
  */
 export function CornerEditor({
   pageNo,
@@ -20,6 +22,8 @@ export function CornerEditor({
   found,
   filter: initialFilter,
   showLook = true,
+  allFilter,
+  renderPreview,
   onApply,
   onClose,
 }: {
@@ -31,6 +35,10 @@ export function CornerEditor({
   /** This page's own look, or null to follow the one chosen for all pages. */
   filter: ScanFilter | null;
   showLook?: boolean;
+  /** The look chosen for all pages (what "Same as all" means). */
+  allFilter: ScanFilter;
+  /** Straighten and clean up with these corners and look, small, for the result preview. */
+  renderPreview: (quad: Quad, filter: ScanFilter) => Promise<Blob>;
   onApply: (quad: Quad, filter: ScanFilter | null) => void;
   onClose: () => void;
 }) {
@@ -42,6 +50,43 @@ export function CornerEditor({
   const [fit, setFit] = useState<{ w: number; h: number } | null>(null);
   const area = useRef<HTMLDivElement>(null);
   const sane = quadIsSane(quad);
+  const look = filter ?? allFilter;
+
+  // Wide screens show photo and result side by side; phones switch between them.
+  const [wide, setWide] = useState(false);
+  const [pane, setPane] = useState<"corners" | "result">("corners");
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 900px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+
+  // The result: re-rendered (small) shortly after the corners or look change, once dragging stops.
+  const [result, setResult] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const seq = useRef(0);
+  useEffect(() => {
+    if (drag !== null || !sane) return;
+    const n = ++seq.current;
+    setUpdating(true);
+    const t = setTimeout(() => {
+      renderPreview(quad, look)
+        .then((blob) => {
+          if (n !== seq.current) return;
+          setResult((old) => {
+            if (old) URL.revokeObjectURL(old);
+            return URL.createObjectURL(blob);
+          });
+        })
+        .catch(() => undefined)
+        .finally(() => n === seq.current && setUpdating(false));
+    }, 250);
+    return () => clearTimeout(t);
+    // renderPreview is stable enough for this; re-run only when what's shown would change.
+  }, [quad, look, drag, sane]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { setResult((old) => { if (old) URL.revokeObjectURL(old); return null; }); }, []);
 
   // Size the photo to fit the space it has, keeping its proportions.
   useEffect(() => {
@@ -89,7 +134,18 @@ export function CornerEditor({
         <button type="button" aria-label="Close" className="ml-auto rounded-lg p-2 hover:bg-white/10" onClick={onClose}><IconX /></button>
       </div>
 
-      <div ref={area} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+      {!wide && (
+        <div role="group" aria-label="Show" className="mx-4 mb-2 flex self-start rounded-lg bg-white/10 p-1 text-sm">
+          {(["corners", "result"] as const).map((v) => (
+            <button key={v} type="button" aria-pressed={pane === v} onClick={() => setPane(v)} className={`rounded-md px-4 py-1.5 font-medium ${pane === v ? "bg-white text-zinc-900" : "text-zinc-200"}`}>
+              {v === "corners" ? "Corners" : "Result"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1">
+      <div ref={area} className={`relative min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden ${!wide && pane === "result" ? "hidden" : "flex"}`}>
         <div ref={box} className="relative touch-none select-none" style={fit ? { width: fit.w, height: fit.h } : { visibility: "hidden" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img ref={img} src={preview} alt={`Photo for page ${pageNo}`} className="block h-full w-full" draggable={false} />
@@ -137,6 +193,21 @@ export function CornerEditor({
           </div>
         )}
       </div>
+      {(wide || pane === "result") && (
+        <section aria-label="Result" className={`relative flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2 p-4 ${wide ? "border-l border-white/10" : ""}`}>
+          {wide && <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Result</span>}
+          <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
+            {result ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={result} alt={`Result for page ${pageNo}`} className={`max-h-full max-w-full bg-white object-contain shadow-2xl transition-opacity ${updating ? "opacity-60" : ""}`} />
+            ) : (
+              <span className="text-sm text-zinc-400">{sane ? "Preparing the result…" : "Fix the corners to see the result."}</span>
+            )}
+            {updating && result && <span role="status" className="absolute rounded-lg bg-black/70 px-3 py-1.5 text-sm">Updating…</span>}
+          </div>
+        </section>
+      )}
+      </div>
 
       <div className="flex flex-col gap-3 border-t border-white/10 bg-zinc-900 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -146,17 +217,22 @@ export function CornerEditor({
           <button type="button" className="rounded-lg border border-white/20 px-3 py-2 text-sm hover:bg-white/10" onClick={() => setQuad(FULL)}>
             Whole photo
           </button>
-          {showLook && <label className="ml-auto flex items-center gap-2 text-sm">
-            Look
-            <select
-              className="rounded-lg border border-white/20 bg-zinc-800 px-2 py-2 text-sm"
-              value={filter ?? ""}
-              onChange={(e) => setFilter((e.target.value || null) as ScanFilter | null)}
-            >
-              <option value="">Same as all pages</option>
-              {FILTERS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-            </select>
-          </label>}
+          {showLook && (
+            <div role="radiogroup" aria-label="Look" className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+              {[{ id: null, label: "Same as all" } as { id: ScanFilter | null; label: string }, ...FILTERS].map((f) => (
+                <button
+                  key={f.id ?? "all"}
+                  type="button"
+                  role="radio"
+                  aria-checked={filter === f.id}
+                  onClick={() => { setFilter(f.id); if (!wide) setPane("result"); }}
+                  className={`rounded-full border px-3 py-1.5 text-sm ${filter === f.id ? "border-white bg-white text-zinc-900" : "border-white/30 hover:border-white/60"}`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {!sane && <p role="alert" className="text-sm text-red-300">The corners cross over or are too squashed. Move them onto the page&apos;s four corners.</p>}
         <div className="flex justify-end gap-2">

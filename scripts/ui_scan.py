@@ -105,6 +105,17 @@ def main():
         page.get_by_role("button", name="Adjust page 1").click()
         dlg = page.get_by_role("dialog", name="Adjust page 1")
         expect(dlg).to_be_visible()
+        # The result is shown beside the photo, and follows the look.
+        res = dlg.get_by_role("region", name="Result").get_by_alt_text("Result for page 1")
+        expect(res).to_be_visible(timeout=30000)
+        dlg.get_by_role("radio", name="Black & white").click()
+        expect(dlg.get_by_role("status").filter(has_text="Updating")).to_have_count(0, timeout=30000)
+        bw = res.evaluate("""i => { const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight;
+            const x = c.getContext('2d'); x.drawImage(i, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data;
+            let mid = 0; for (let k = 0; k < d.length; k += 4) if (d[k] > 80 && d[k] < 175) mid++; return mid / (d.length / 4); }""")
+        assert bw < 0.04, bw
+        page.screenshot(path=f"{OUT}/scan-03a-adjust-result.png")
+        src_before = res.get_attribute("src")
         tl = dlg.get_by_role("button", name="Top-left corner")
         before = tl.evaluate("b => b.style.left")
         box = tl.bounding_box()
@@ -114,13 +125,14 @@ def main():
         page.screenshot(path=f"{OUT}/scan-03-corners-drag.png")  # magnifier visible while dragging
         page.mouse.up()
         assert tl.evaluate("b => b.style.left") != before
+        expect(res).not_to_have_attribute("src", src_before, timeout=30000)  # the result follows the corners
         tl.focus()
         moved = tl.evaluate("b => b.style.left")
         page.keyboard.press("ArrowLeft")
         assert tl.evaluate("b => b.style.left") != moved
         dlg.get_by_role("button", name="Find edges again").click()
         assert tl.evaluate("b => b.style.left") == before
-        dlg.get_by_label("Look").select_option("auto")
+        dlg.get_by_role("radio", name="Auto").click()
         dlg.get_by_role("button", name="Apply").click()
         expect(dlg).to_be_hidden()
         wait_ready(page, 2)
@@ -201,6 +213,11 @@ def main():
         expect(dlg).to_be_visible(timeout=30000)
         expect(dlg.get_by_text("We couldn't find the page edges.")).to_be_visible()
         page.screenshot(path=f"{OUT}/scan-06-phone-corners.png")
+        dlg.get_by_role("button", name="Result").click()
+        expect(dlg.get_by_alt_text("Result for page 2")).to_be_visible(timeout=30000)
+        expect(dlg.get_by_role("button", name="Top-left corner")).to_be_hidden()
+        page.screenshot(path=f"{OUT}/scan-06b-phone-result.png")
+        dlg.get_by_role("button", name="Corners").click()
         dlg.get_by_role("button", name="Whole photo").click()
         dlg.get_by_role("button", name="Apply").click()
         expect(rv).to_be_visible(timeout=30000)

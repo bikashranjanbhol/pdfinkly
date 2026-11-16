@@ -147,7 +147,8 @@ Phone photos of paper documents become clean, scanned-looking PDFs, entirely in 
   colourful surface) and four-sided shapes made from the strongest straight edges (a Hough transform), which
   shadows and light tables don't fool. The outline whose sides best follow real edges wins; the corners are then
   sharpened at higher resolution to a fraction of a pixel. If nothing convincing is found the user is asked to drag
-  the corners (with a magnifier; arrow keys work too).
+  the corners (with a magnifier; arrow keys work too). The corner screen shows the result beside the photo (on a
+  phone, one tap away) and updates as the corners or the page's look change.
 - **Straightening**: a perspective warp. The page's true proportions come from a pinhole-camera model (the focal
   length is recovered from how the edges converge), then snap to A4 or Letter when within 4%.
 - **Looks**: *Auto* divides out the paper colour estimated on a coarse grid (shadows, uneven light and colour casts

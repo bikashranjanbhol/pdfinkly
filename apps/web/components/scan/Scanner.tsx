@@ -508,6 +508,13 @@ export function Scanner({ handoff }: { handoff?: string } = {}) {
           found={editPage.found}
           filter={editPage.filter}
           showLook={!phoneMode}
+          allFilter={filter}
+          renderPreview={async (quad, look) => {
+            const r = phoneMode
+              ? await renderPage(editPage.file, quad, "original", editPage.turns, editPage.photo!, look, 1000)
+              : await renderPage(editPage.file, quad, look, editPage.turns, editPage.photo!, undefined, 1000);
+            return r.view;
+          }}
           onClose={() => setEditing(null)}
           onApply={(quad, f) => {
             patch(editPage.id, { quad, filter: f, found: true });

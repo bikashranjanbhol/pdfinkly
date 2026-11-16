@@ -88,10 +88,12 @@ const QUALITY: Record<ScanFilter, number> = { auto: 0.8, gray: 0.78, bw: 0.72, o
  */
 export async function render(
   blob: Blob, quad: Quad, filter: ScanFilter, turns: number, photo: { width: number; height: number }, thumbFilter?: ScanFilter,
+  /** Smaller output for a quick preview. */
+  maxSide?: number,
 ): Promise<Rendered> {
   const W = photo.width, H = photo.height;
   const qNat = quad.map((p) => ({ x: p.x * W, y: p.y * H })) as Quad;
-  const size = outputSize(qNat, undefined, photo);
+  const size = outputSize(qNat, maxSide, photo);
   // Decode only as large as needed: the page area about 1.4× the output, never more than the photo.
   const qLong = Math.max(...[0, 1, 2, 3].map((i) => Math.hypot(qNat[i]!.x - qNat[(i + 1) % 4]!.x, qNat[i]!.y - qNat[(i + 1) % 4]!.y)));
   const scale = Math.min(1, (1.4 * Math.max(size.width, size.height)) / qLong);
